@@ -401,6 +401,50 @@ bool RefactorizationSolver::validate_klu_factorization(const char* caller) const
   return true;
 }
 
+bool RefactorizationSolver::checkCusolverRfStatus(cusolverStatus_t status, const char* caller) const
+{
+  if(status == CUSOLVER_STATUS_SUCCESS) {
+    return true;
+  }
+
+  if(!silent_output_) {
+    std::cout << "[EVLOSER] " << caller << " failed with cuSOLVER status " << status << "\n";
+  }
+
+  return false;
+}
+
+int RefactorizationSolver::resetCusolverRfValues(const char* caller)
+{
+  sp_status_ = cusolverRfResetValues(n_,
+                                     nnz_,
+                                     mat_A_csr_->device_irows(),
+                                     mat_A_csr_->device_jcols(),
+                                     mat_A_csr_->device_vals(),
+                                     d_P_,
+                                     d_Q_,
+                                     handle_rf_);
+
+  if(!checkCusolverRfStatus(sp_status_, caller)) {
+    return -1;
+  }
+
+  checkCudaErrors(cudaDeviceSynchronize());
+  return 0;
+}
+
+int RefactorizationSolver::analyzeCusolverRf(const char* caller)
+{
+  sp_status_ = cusolverRfAnalyze(handle_rf_);
+  return checkCusolverRfStatus(sp_status_, caller) ? 0 : -1;
+}
+
+int RefactorizationSolver::refactorizeCusolverRf(const char* caller)
+{
+  sp_status_ = cusolverRfRefactor(handle_rf_);
+  return checkCusolverRfStatus(sp_status_, caller) ? 0 : -1;
+}
+
 int RefactorizationSolver::setup_factorization()
 {
   if(!validate_system_matrix("KLU analysis")) {
@@ -448,8 +492,10 @@ void RefactorizationSolver::setup_refactorization()
     initializeCusolverGLU();
     refactorizationSetupCusolverGLU();
   } else if(refact_ == "rf") {
-    initializeCusolverRf();
-    refactorizationSetupCusolverRf();
+    if(initializeCusolverRf() != 0 || refactorizationSetupCusolverRf() != 0) {
+      assert(false && "cuSOLVER RF setup failed.");
+      return;
+    }
     if(use_ir_ == "yes") {
       configure_iterative_refinement(handle_, handle_cublas_, handle_rf_, n_, d_T_, d_P_, d_Q_, devx_, devr_);
     }
@@ -477,16 +523,12 @@ int RefactorizationSolver::refactorize()
     sp_status_ = cusolverSpDgluFactor(handle_cusolver_, info_M_, d_work_);
   } else {
     if(refact_ == "rf") {
-      sp_status_ = cusolverRfResetValues(n_,
-                                         nnz_,
-                                         mat_A_csr_->device_irows(),
-                                         mat_A_csr_->device_jcols(),
-                                         mat_A_csr_->device_vals(),
-                                         d_P_,
-                                         d_Q_,
-                                         handle_rf_);
-      cudaDeviceSynchronize();
-      sp_status_ = cusolverRfRefactor(handle_rf_);
+      if(resetCusolverRfValues("cuSOLVER RF reset values") != 0) {
+        return -1;
+      }
+      if(refactorizeCusolverRf("cuSOLVER RF refactorization") != 0) {
+        return -1;
+      }
     }
   }
   return 0;
@@ -687,18 +729,32 @@ int RefactorizationSolver::initializeCusolverGLU()
 
 int RefactorizationSolver::initializeCusolverRf()
 {
-  cusolverRfCreate(&handle_rf_);
+  if(!checkCusolverRfStatus(cusolverRfCreate(&handle_rf_), "cusolverRfCreate")) {
+    return -1;
+  }
 
-  checkCudaErrors(cusolverRfSetAlgs(handle_rf_, CUSOLVERRF_FACTORIZATION_ALG2, CUSOLVERRF_TRIANGULAR_SOLVE_ALG2));
+  sp_status_ = cusolverRfSetAlgs(handle_rf_, CUSOLVERRF_FACTORIZATION_ALG2, CUSOLVERRF_TRIANGULAR_SOLVE_ALG2);
+  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetAlgs")) {
+    return -1;
+  }
 
-  checkCudaErrors(cusolverRfSetMatrixFormat(handle_rf_, CUSOLVERRF_MATRIX_FORMAT_CSR, CUSOLVERRF_UNIT_DIAGONAL_STORED_L));
+  sp_status_ = cusolverRfSetMatrixFormat(handle_rf_, CUSOLVERRF_MATRIX_FORMAT_CSR, CUSOLVERRF_UNIT_DIAGONAL_STORED_L);
+  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetMatrixFormat")) {
+    return -1;
+  }
 
-  cusolverRfSetResetValuesFastMode(handle_rf_, CUSOLVERRF_RESET_VALUES_FAST_MODE_ON);
+  sp_status_ = cusolverRfSetResetValuesFastMode(handle_rf_, CUSOLVERRF_RESET_VALUES_FAST_MODE_ON);
+  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetResetValuesFastMode")) {
+    return -1;
+  }
 
   const double boost = 1e-12;
   const double zero = 1e-14;
 
-  cusolverRfSetNumericProperties(handle_rf_, zero, boost);
+  sp_status_ = cusolverRfSetNumericProperties(handle_rf_, zero, boost);
+  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetNumericProperties")) {
+    return -1;
+  }
 
   cusolver_rf_enabled_ = true;
   return 0;
@@ -844,15 +900,15 @@ int RefactorizationSolver::refactorizationSetupCusolverRf()
                                    Numeric_->Pnum,
                                    Symbolic_->Q,
                                    handle_rf_);
-  assert(CUSOLVER_STATUS_SUCCESS == sp_status_);
+  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetupHost")) {
+    return -1;
+  }
 
-  sp_status_ = cusolverRfAnalyze(handle_rf_);
-  assert(CUSOLVER_STATUS_SUCCESS == sp_status_);
+  if(analyzeCusolverRf("cuSOLVER RF analysis") != 0) {
+    return -1;
+  }
 
-  sp_status_ = cusolverRfRefactor(handle_rf_);
-  assert(CUSOLVER_STATUS_SUCCESS == sp_status_);
-
-  return 0;
+  return refactorizeCusolverRf("cuSOLVER RF initial refactorization");
 }
 
 // Error checking utility for CUDA

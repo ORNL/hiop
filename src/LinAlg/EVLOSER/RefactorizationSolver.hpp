@@ -232,6 +232,11 @@ private:
   int refactorizationSetupCusolverGLU();
   int refactorizationSetupCusolverRf();
 
+  bool checkCusolverRfStatus(cusolverStatus_t status, const char* caller) const;
+  int resetCusolverRfValues(const char* caller);
+  int analyzeCusolverRf(const char* caller);
+  int refactorizeCusolverRf(const char* caller);
+
   /**
    * @brief Check for CUDA errors.
    *
