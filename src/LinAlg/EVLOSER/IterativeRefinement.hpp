@@ -9,7 +9,7 @@
 #pragma once
 
 #include "klu.h"
-#include "resolve_cusolver_defs.hpp"
+#include "evloser_cusolver_defs.hpp"
 #include <string>
 
 namespace EVLOSER
@@ -170,7 +170,7 @@ private:
    * @param line   - line at which the error occured
    */
   template<typename T>
-  void resolveCheckCudaError(T result, const char* const file, int const line);
+  void evloserCheckCudaError(T result, const char* const file, int const line);
 };
 
 }  // namespace EVLOSER

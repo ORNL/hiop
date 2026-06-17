@@ -65,7 +65,7 @@
 #include <vector>
 #include <iostream>
 
-#define checkCudaErrors(val) resolveCheckCudaError((val), __FILE__, __LINE__)
+#define checkCudaErrors(val) evloserCheckCudaError((val), __FILE__, __LINE__)
 
 namespace EVLOSER
 {
@@ -684,7 +684,7 @@ void IterativeRefinement::GramSchmidt(int i)
 // Error checking utility for CUDA
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>
-void IterativeRefinement::resolveCheckCudaError(T result, const char* const file, int const line)
+void IterativeRefinement::evloserCheckCudaError(T result, const char* const file, int const line)
 {
 #ifdef DEBUG
   if(result) {

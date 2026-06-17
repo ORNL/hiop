@@ -54,13 +54,11 @@
  */
 
 #include "hiopLinSolverSparseEVLOSER.hpp"
-#include <IterativeRefinement.hpp>
 #include "EVLOSER/RefactorizationSolver.hpp"
 #include "EVLOSER/MatrixCsr.hpp"
 #include "EVLOSER/IterativeRefinement.hpp"
 
 #include "hiop_blasdefs.hpp"
-#include "KrylovSolverKernels.h"
 
 #include "cusparse_v2.h"
 #include <sstream>
@@ -77,7 +75,7 @@
  *
  */
 template<typename T, typename I>
-__global__ void mapArraysKernelEVLOSER(T* dst, const T* src, const I* mapidx, I n)
+__global__ void evloser_map_arrays_kernel(T* dst, const T* src, const I* mapidx, I n)
 {
   I tid = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -96,7 +94,7 @@ __global__ void mapArraysKernelEVLOSER(T* dst, const T* src, const I* mapidx, I 
  *
  */
 template<typename T, typename I>
-__global__ void addToArrayKernelEVLOSER(T* dst, const T* src, const I* mapidx, I n, I nnz)
+__global__ void evloser_add_to_array_kernel(T* dst, const T* src, const I* mapidx, I n, I nnz)
 {
   I tid = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -119,7 +117,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       factorizationSetupSucc_{0},
       is_first_call_{true}
 {
-  // Create embedded ReSolve refactorization solver for the EVLOSER wrapper
+  // Create embedded EVLOSER refactorization solver
   solver_ = new EVLOSER::RefactorizationSolver(n);
 
   // If memory space is device, allocate host mirror for HiOp's KKT matrix in triplet format
@@ -384,10 +382,10 @@ void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 
     const int blocksize = 512;
     int gridsize = (nnz_ + blocksize - 1) / blocksize;
-    mapArraysKernelEVLOSER<double, int><<<gridsize, blocksize>>>(csr_vals, coo_vals, index_convert_CSR2Triplet_device_, nnz_);
+    evloser_map_arrays_kernel<double, int><<<gridsize, blocksize>>>(csr_vals, coo_vals, index_convert_CSR2Triplet_device_, nnz_);
 
     gridsize = (n_ + blocksize - 1) / blocksize;
-    addToArrayKernelEVLOSER<double, int>
+    evloser_add_to_array_kernel<double, int>
         <<<gridsize, blocksize>>>(csr_vals, coo_vals, index_convert_extra_Diag2CSR_device_, n_, coo_nnz);
 
     // If factorization was not successful, we need a copy of values on the host

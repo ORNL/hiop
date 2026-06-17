@@ -62,7 +62,7 @@
 #include <unordered_map>
 
 /** Implements the sparse linear solver class using the EVLOSER interface
- *  to the embedded ReSolve backend.
+ *  to the embedded EVLOSER backend.
  *
  * @ingroup LinearSolvers
  */

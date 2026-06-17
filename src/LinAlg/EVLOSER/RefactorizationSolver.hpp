@@ -57,7 +57,7 @@
 #pragma once
 
 #include "klu.h"
-#include "resolve_cusolver_defs.hpp"
+#include "evloser_cusolver_defs.hpp"
 #include <string>
 
 namespace EVLOSER
@@ -78,9 +78,16 @@ public:
   RefactorizationSolver(int n);
   ~RefactorizationSolver();
 
+  /// Enable allocation and use of iterative refinement.
   void enable_iterative_refinement();
+
+  /// Disable iterative refinement and release its owned state.
   void disable_iterative_refinement();
+
+  /// Return true when iterative refinement is enabled, allocated, and requested.
   bool iterative_refinement_active() const;
+
+  /// Attach the current CSR matrix to the iterative refinement object.
   void setup_iterative_refinement_matrix(int n, int nnz);
   void configure_iterative_refinement(cusparseHandle_t cusparse_handle,
                                       cublasHandle_t cublas_handle,
@@ -224,7 +231,10 @@ private:
    */
   int createM(const int n, const int nnzL, const int* Lp, const int* Li, const int nnzU, const int* Up, const int* Ui);
 
+  /// Validate the current CSR system matrix before solver setup or refactorization.
   bool validate_system_matrix(const char* caller) const;
+
+  /// Validate that KLU symbolic and numeric factors are available and dimensionally consistent.
   bool validate_klu_factorization(const char* caller) const;
 
   int initializeKLU();
@@ -234,9 +244,16 @@ private:
   int refactorizationSetupCusolverGLU();
   int refactorizationSetupCusolverRf();
 
+  /// Check and report a cuSOLVER RF status value.
   bool checkCusolverRfStatus(cusolverStatus_t status, const char* caller) const;
+
+  /// Reset cuSOLVER RF values using the current device CSR matrix.
   int resetCusolverRfValues(const char* caller);
+
+  /// Run cuSOLVER RF analysis on the configured RF handle.
   int analyzeCusolverRf(const char* caller);
+
+  /// Run cuSOLVER RF numeric refactorization on the configured RF handle.
   int refactorizeCusolverRf(const char* caller);
 
   /**
@@ -248,7 +265,7 @@ private:
    * @param line   - line at which the error occured
    */
   template<typename T>
-  void resolveCheckCudaError(T result, const char* const file, int const line);
+  void evloserCheckCudaError(T result, const char* const file, int const line);
 };
 
 }  // namespace EVLOSER

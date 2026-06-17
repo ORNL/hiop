@@ -6,12 +6,6 @@ set(EVLOSER_SRC
   IterativeRefinement.cpp
   KrylovSolverKernels.cu
 )
-set(EVLOSER_HEADERS
-  RefactorizationSolver.hpp
-  MatrixCsr.hpp
-  IterativeRefinement.hpp
-)
-
 set_source_files_properties(${EVLOSER_SRC} PROPERTIES LANGUAGE CUDA)
 
 add_library(EVLOSER STATIC ${EVLOSER_SRC})

@@ -64,7 +64,7 @@
 #include <vector>
 #include <iostream>
 
-#define checkCudaErrors(val) resolveCheckCudaError((val), __FILE__, __LINE__)
+#define checkCudaErrors(val) evloserCheckCudaError((val), __FILE__, __LINE__)
 
 namespace EVLOSER
 {
@@ -938,7 +938,7 @@ int RefactorizationSolver::refactorizationSetupCusolverRf()
 // Error checking utility for CUDA
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>
-void RefactorizationSolver::resolveCheckCudaError(T result, const char* const file, int const line)
+void RefactorizationSolver::evloserCheckCudaError(T result, const char* const file, int const line)
 {
   if(result) {
     fprintf(stdout, "CUDA error at %s:%d, error# %d\n", file, line, result);

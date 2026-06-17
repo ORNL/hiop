@@ -43,7 +43,7 @@
 // product endorsement purposes.
 
 /**
- * @file hiop_cusolver_defs.hpp
+ * @file evloser_cusolver_defs.hpp
  *
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
  *

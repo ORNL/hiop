@@ -63,7 +63,7 @@
 #include <iostream>
 #include <cassert>
 
-#define checkCudaErrors(val) resolveCheckCudaError((val), __FILE__, __LINE__)
+#define checkCudaErrors(val) evloserCheckCudaError((val), __FILE__, __LINE__)
 
 namespace EVLOSER
 {
@@ -235,7 +235,7 @@ bool MatrixCsr::validate_host_structure(const char* caller, bool silent_output) 
 // Error checking utility for CUDA
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>
-void MatrixCsr::resolveCheckCudaError(T result, const char* const file, int const line)
+void MatrixCsr::evloserCheckCudaError(T result, const char* const file, int const line)
 {
   if(result) {
     std::cout << "CUDA error at " << file << ":" << line << " error# " << result << "\n";
