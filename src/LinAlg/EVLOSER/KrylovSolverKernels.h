@@ -1,4 +1,3 @@
-//
 // This file is part of HiOp. For details, see https://github.com/LLNL/hiop.
 // HiOp is released under the BSD 3-clause license
 // (https://opensource.org/licenses/BSD-3-Clause). Please also read “Additional
@@ -47,115 +46,25 @@
 // endorsement purposes.
 
 /**
- * @file hiopLinSolverSparseEVLOSER.hpp
+ * @file src/LinAlg/KrylovSolverKernels.h
  *
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
- * @author Slaven Peles <peless@ornl.gov>, ORNL
  *
  */
 
-#ifndef HIOP_LINSOLVER_EVLOSER
-#define HIOP_LINSOLVER_EVLOSER
 
-#include "hiopLinSolver.hpp"
-#include "hiopMatrixSparseTriplet.hpp"
-#include <unordered_map>
+void evloser_mass_inner_product_two_vectors(int n, 
+                                    int i, 
+                                    double* vec1, 
+                                    double* vec2, 
+                                    double* mvec, 
+                                    double* result);
+void evloser_mass_axpy(int n, int i, double* x, double* y, double* alpha);
 
-/** Implements the sparse linear solver class using the EVLOSER interface
- *  to the embedded ReSolve backend.
- *
- * @ingroup LinearSolvers
- */
+//needed for matrix inf nrm
+void evloser_matrix_row_sums(int n, 
+                     int nnz, 
+                     int* a_ia,
+                     double* a_val, 
+                     double* result);
 
-namespace EVLOSER
-{
-// Forward declaration of inner IR class
-class IterativeRefinement;
-class MatrixCsr;
-class RefactorizationSolver;
-}  // namespace EVLOSER
-
-namespace hiop
-{
-
-class hiopLinSolverSymSparseEVLOSER : public hiopLinSolverSymSparse
-{
-public:
-  // constructor
-  hiopLinSolverSymSparseEVLOSER(const int& n, const int& nnz, hiopNlpFormulation* nlp);
-  virtual ~hiopLinSolverSymSparseEVLOSER();
-
-  /**
-   * @brief Triggers a refactorization of the matrix, if necessary.
-   * Overload from base class.
-   * In this case, KLU (SuiteSparse) is used to refactor
-   */
-  virtual int matrixChanged();
-
-  /**
-   * @brief Solves a linear system.
-   *
-   * @param x is on entry the right hand side(s) of the system to be solved.
-   *
-   * @post On exit `x` is overwritten with the solution(s).
-   */
-  virtual bool solve(hiopVector& x_);
-
-  /** Multiple rhs not supported yet */
-  virtual bool solve(hiopMatrix& /* x */)
-  {
-    assert(false && "not yet supported");
-    return false;
-  }
-
-protected:
-  EVLOSER::RefactorizationSolver* solver_;
-
-  int m_;    ///< number of rows of the whole matrix
-  int n_;    ///< number of cols of the whole matrix
-  int nnz_;  ///< number of nonzeros in the matrix
-
-  // Mapping on the host
-  int* index_convert_CSR2Triplet_host_;
-  int* index_convert_extra_Diag2CSR_host_;
-
-  // Mapping on the device
-  int* index_convert_CSR2Triplet_device_;
-  int* index_convert_extra_Diag2CSR_device_;
-
-  // Algorithm control flags
-  int factorizationSetupSucc_;
-  bool is_first_call_;
-
-  hiopMatrixSparse* M_host_{nullptr};  ///< Host mirror for the KKT matrix
-
-  /* private function: creates a cuSolver data structure from KLU data
-   * structures. */
-
-  /** called the very first time a matrix is factored. Perform KLU
-   * factorization, allocate all aux variables
-   *
-   * @note Converts HiOp triplet matrix to CSR format.
-   */
-  virtual void firstCall();
-
-  /**
-   * @brief Updates matrix values from HiOp object.
-   *
-   * @note This function maps data from HiOp supplied matrix M_ to data structures
-   * used by the linear solver.
-   */
-  void update_matrix_values();
-
-  /** Function to compute nnz and set row pointers */
-  void compute_nnz();
-  /** Function to compute column indices and matrix values arrays */
-  void set_csr_indices_values();
-
-  template<typename T>
-  void hiopCheckCudaError(T result, const char* const file, int const line);
-};
-
-}  // namespace hiop
-
-#endif

@@ -1,4 +1,3 @@
-//
 // This file is part of HiOp. For details, see https://github.com/LLNL/hiop.
 // HiOp is released under the BSD 3-clause license
 // (https://opensource.org/licenses/BSD-3-Clause). Please also read “Additional
@@ -47,115 +46,98 @@
 // endorsement purposes.
 
 /**
- * @file hiopLinSolverSparseEVLOSER.hpp
+ * @file MatrixCsr.cpp
  *
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
  * @author Slaven Peles <peless@ornl.gov>, ORNL
  *
  */
 
-#ifndef HIOP_LINSOLVER_EVLOSER
-#define HIOP_LINSOLVER_EVLOSER
+#include "hiop_blasdefs.hpp"
+#include "MatrixCsr.hpp"
 
-#include "hiopLinSolver.hpp"
-#include "hiopMatrixSparseTriplet.hpp"
-#include <unordered_map>
+#include "cusparse_v2.h"
+#include <sstream>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <cassert>
 
-/** Implements the sparse linear solver class using the EVLOSER interface
- *  to the embedded ReSolve backend.
- *
- * @ingroup LinearSolvers
- */
+#define checkCudaErrors(val) resolveCheckCudaError((val), __FILE__, __LINE__)
 
 namespace EVLOSER
 {
-// Forward declaration of inner IR class
-class IterativeRefinement;
-class MatrixCsr;
-class RefactorizationSolver;
-}  // namespace EVLOSER
 
-namespace hiop
+MatrixCsr::MatrixCsr() {}
+
+MatrixCsr::~MatrixCsr()
 {
+  if(n_ == 0) return;
 
-class hiopLinSolverSymSparseEVLOSER : public hiopLinSolverSymSparse
+  clear_data();
+}
+
+void MatrixCsr::allocate_size(int n)
 {
-public:
-  // constructor
-  hiopLinSolverSymSparseEVLOSER(const int& n, const int& nnz, hiopNlpFormulation* nlp);
-  virtual ~hiopLinSolverSymSparseEVLOSER();
+  n_ = n;
+  checkCudaErrors(cudaMalloc(&irows_, (n_ + 1) * sizeof(int)));
+  irows_host_ = new int[n_ + 1]{0};
+}
 
-  /**
-   * @brief Triggers a refactorization of the matrix, if necessary.
-   * Overload from base class.
-   * In this case, KLU (SuiteSparse) is used to refactor
-   */
-  virtual int matrixChanged();
+void MatrixCsr::allocate_nnz(int nnz)
+{
+  nnz_ = nnz;
+  checkCudaErrors(cudaMalloc(&jcols_, nnz_ * sizeof(int)));
+  checkCudaErrors(cudaMalloc(&vals_, nnz_ * sizeof(double)));
+  jcols_host_ = new int[nnz_]{0};
+  vals_host_ = new double[nnz_]{0};
+}
 
-  /**
-   * @brief Solves a linear system.
-   *
-   * @param x is on entry the right hand side(s) of the system to be solved.
-   *
-   * @post On exit `x` is overwritten with the solution(s).
-   */
-  virtual bool solve(hiopVector& x_);
+void MatrixCsr::clear_data()
+{
+  checkCudaErrors(cudaFree(irows_));
+  checkCudaErrors(cudaFree(jcols_));
+  checkCudaErrors(cudaFree(vals_));
 
-  /** Multiple rhs not supported yet */
-  virtual bool solve(hiopMatrix& /* x */)
-  {
-    assert(false && "not yet supported");
-    return false;
+  irows_ = nullptr;
+  jcols_ = nullptr;
+  vals_ = nullptr;
+
+  delete[] irows_host_;
+  delete[] jcols_host_;
+  delete[] vals_host_;
+
+  irows_host_ = nullptr;
+  jcols_host_ = nullptr;
+  vals_host_ = nullptr;
+
+  n_ = 0;
+  nnz_ = 0;
+}
+
+void MatrixCsr::update_from_host_mirror()
+{
+  checkCudaErrors(cudaMemcpy(irows_, irows_host_, sizeof(int) * (n_ + 1), cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMemcpy(jcols_, jcols_host_, sizeof(int) * nnz_, cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMemcpy(vals_, vals_host_, sizeof(double) * nnz_, cudaMemcpyHostToDevice));
+}
+
+void MatrixCsr::copy_to_host_mirror()
+{
+  checkCudaErrors(cudaMemcpy(irows_host_, irows_, sizeof(int) * (n_ + 1), cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaMemcpy(jcols_host_, jcols_, sizeof(int) * nnz_, cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaMemcpy(vals_host_, vals_, sizeof(double) * nnz_, cudaMemcpyDeviceToHost));
+}
+
+// Error checking utility for CUDA
+// KS: might later become part of src/Utils, putting it here for now
+template<typename T>
+void MatrixCsr::resolveCheckCudaError(T result, const char* const file, int const line)
+{
+  if(result) {
+    std::cout << "CUDA error at " << file << ":" << line << " error# " << result << "\n";
+    assert(false);
   }
+}
 
-protected:
-  EVLOSER::RefactorizationSolver* solver_;
-
-  int m_;    ///< number of rows of the whole matrix
-  int n_;    ///< number of cols of the whole matrix
-  int nnz_;  ///< number of nonzeros in the matrix
-
-  // Mapping on the host
-  int* index_convert_CSR2Triplet_host_;
-  int* index_convert_extra_Diag2CSR_host_;
-
-  // Mapping on the device
-  int* index_convert_CSR2Triplet_device_;
-  int* index_convert_extra_Diag2CSR_device_;
-
-  // Algorithm control flags
-  int factorizationSetupSucc_;
-  bool is_first_call_;
-
-  hiopMatrixSparse* M_host_{nullptr};  ///< Host mirror for the KKT matrix
-
-  /* private function: creates a cuSolver data structure from KLU data
-   * structures. */
-
-  /** called the very first time a matrix is factored. Perform KLU
-   * factorization, allocate all aux variables
-   *
-   * @note Converts HiOp triplet matrix to CSR format.
-   */
-  virtual void firstCall();
-
-  /**
-   * @brief Updates matrix values from HiOp object.
-   *
-   * @note This function maps data from HiOp supplied matrix M_ to data structures
-   * used by the linear solver.
-   */
-  void update_matrix_values();
-
-  /** Function to compute nnz and set row pointers */
-  void compute_nnz();
-  /** Function to compute column indices and matrix values arrays */
-  void set_csr_indices_values();
-
-  template<typename T>
-  void hiopCheckCudaError(T result, const char* const file, int const line);
-};
-
-}  // namespace hiop
-
-#endif
+}  // namespace EVLOSER

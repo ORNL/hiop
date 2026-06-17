@@ -55,8 +55,9 @@
 
 #include "hiopLinSolverSparseEVLOSER.hpp"
 #include <IterativeRefinement.hpp>
-#include <RefactorizationSolver.hpp>
-#include <MatrixCsr.hpp>
+#include "EVLOSER/RefactorizationSolver.hpp"
+#include "EVLOSER/MatrixCsr.hpp"
+#include "EVLOSER/IterativeRefinement.hpp"
 
 #include "hiop_blasdefs.hpp"
 #include "KrylovSolverKernels.h"
@@ -119,7 +120,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       is_first_call_{true}
 {
   // Create embedded ReSolve refactorization solver for the EVLOSER wrapper
-  solver_ = new ReSolve::RefactorizationSolver(n);
+  solver_ = new EVLOSER::RefactorizationSolver(n);
 
   // If memory space is device, allocate host mirror for HiOp's KKT matrix in triplet format
   if(nlp_->options->GetString("mem_space") == "device") {
