@@ -47,7 +47,7 @@
 // endorsement purposes.
 
 /**
- * @file hiopLinSolverSparseReSolve.hpp
+ * @file hiopLinSolverSparseEVLOSER.hpp
  *
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
  * @author Slaven Peles <peless@ornl.gov>, ORNL
@@ -61,8 +61,8 @@
 #include "hiopMatrixSparseTriplet.hpp"
 #include <unordered_map>
 
-/** implements the linear solver class using nvidia_ cuSolver (GLU
- * refactorization)
+/** Implements the sparse linear solver class using the EVLOSER interface
+ *  to the embedded ReSolve backend.
  *
  * @ingroup LinearSolvers
  */

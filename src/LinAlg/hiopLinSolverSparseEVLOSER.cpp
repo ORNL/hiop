@@ -46,7 +46,7 @@
 // endorsement purposes.
 
 /**
- * @file hiopLinSolverSparseReSolve.cpp
+ * @file hiopLinSolverSparseEVLOSER.cpp
  *
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
  * @author Slaven Peles <peless@ornl.gov>, ORNL
@@ -112,12 +112,13 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       index_convert_extra_Diag2CSR_host_{nullptr},
       index_convert_CSR2Triplet_device_{nullptr},
       index_convert_extra_Diag2CSR_device_{nullptr},
+      m_{n},
       n_{n},
       nnz_{0},
       factorizationSetupSucc_{0},
       is_first_call_{true}
 {
-  // Create ReSolve solver and allocate rhs temporary storage
+  // Create embedded ReSolve refactorization solver for the EVLOSER wrapper
   solver_ = new ReSolve::RefactorizationSolver(n);
 
   // If memory space is device, allocate host mirror for HiOp's KKT matrix in triplet format
@@ -125,7 +126,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     M_host_ = LinearAlgebraFactory::create_matrix_sparse("default", n, n, nnz);
   }
 
-  // Set verbosity of ReSolve based on HiOp verbosity
+  // Set embedded solver verbosity based on HiOp verbosity
   if(nlp_->options->GetInteger("verbosity_level") >= 3) {
     solver_->set_silent_output(false);
   }
@@ -138,7 +139,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   } else if(ord == "colamd_ssparse") {
     ordering = 1;
   } else {
-    nlp_->log->printf(hovWarning, "Ordering %s not compatible with cuSOLVER LU, using default ...\n", ord.c_str());
+    nlp_->log->printf(hovWarning, "Ordering %s not compatible with EVLOSER sparse solver, using default ...\n", ord.c_str());
     ordering = 1;
   }
   solver_->ordering() = ordering;
@@ -148,7 +149,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   std::string fact;
   fact = nlp_->options->GetString("resolve_factorization");
   if(fact != "klu") {
-    nlp_->log->printf(hovWarning, "Factorization %s not compatible with cuSOLVER LU, using default ...\n", fact.c_str());
+    nlp_->log->printf(hovWarning, "Factorization %s not compatible with EVLOSER sparse solver, using default ...\n", fact.c_str());
     fact = "klu";
   }
   solver_->fact() = fact;
@@ -158,7 +159,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   std::string refact;
   refact = nlp_->options->GetString("resolve_refactorization");
   if(refact != "glu" && refact != "rf") {
-    nlp_->log->printf(hovWarning, "Refactorization %s not compatible with cuSOLVER LU, using default ...\n", refact.c_str());
+    nlp_->log->printf(hovWarning, "Refactorization %s not compatible with EVLOSER sparse solver, using default ...\n", refact.c_str());
     refact = "glu";
   }
   solver_->refact() = refact;
@@ -315,7 +316,7 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
   bool retval = solver_->triangular_solve(dx, ir_tol, mem_space);
   if(!retval) {
     nlp_->log->printf(hovError,  // catastrophic failure
-                      "ReSolve triangular solver failed\n");
+                      "EVLOSER triangular solve failed\n");
   }
 
   nlp_->runStats.linsolv.tmTriuSolves.stop();
@@ -426,7 +427,7 @@ void hiopLinSolverSymSparseEVLOSER::compute_nnz()
   } else if(mem_space == "device") {
     M_host = M_host_;
   } else {
-    nlp_->log->printf(hovError, "Memory space %s incompatible with ReSolve.\n", mem_space.c_str());
+    nlp_->log->printf(hovError, "Memory space %s incompatible with EVLOSER.\n", mem_space.c_str());
   }
 
   // off-diagonal part
@@ -461,7 +462,7 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
   } else if(mem_space == "device") {
     M_host = M_host_;
   } else {
-    nlp_->log->printf(hovError, "Memory space %s incompatible with ReSolve.\n", mem_space.c_str());
+    nlp_->log->printf(hovError, "Memory space %s incompatible with EVLOSER.\n", mem_space.c_str());
   }
 
   //
