@@ -155,8 +155,67 @@ void RefactorizationSolver::configure_iterative_refinement(cusparseHandle_t cusp
   ir_->setup(cusparse_handle, cublas_handle, cusolverrf_handle, n, d_T, d_P, d_Q, devx, devr);
 }
 
+bool RefactorizationSolver::validate_system_matrix(const char* caller) const
+{
+  if(mat_A_csr_ == nullptr) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] Invalid matrix in " << caller << ": matrix object is null\n";
+    }
+    return false;
+  }
+
+  return mat_A_csr_->validate_host_structure(caller, silent_output_);
+}
+
+bool RefactorizationSolver::validate_klu_factorization(const char* caller) const
+{
+  if(Symbolic_ == nullptr) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] Invalid KLU factorization in " << caller << ": symbolic factor is null\n";
+    }
+    return false;
+  }
+
+  if(Numeric_ == nullptr) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] Invalid KLU factorization in " << caller << ": numeric factor is null\n";
+    }
+    return false;
+  }
+
+  if(Symbolic_->n != n_) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] Invalid KLU factorization in " << caller << ": symbolic dimension "
+                << Symbolic_->n << " does not match solver dimension " << n_ << "\n";
+    }
+    return false;
+  }
+
+  if(Numeric_->n != n_) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] Invalid KLU factorization in " << caller << ": numeric dimension "
+                << Numeric_->n << " does not match solver dimension " << n_ << "\n";
+    }
+    return false;
+  }
+
+  if(Symbolic_->Q == nullptr || Numeric_->Pnum == nullptr) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] Invalid KLU factorization in " << caller
+                << ": missing permutation data\n";
+    }
+    return false;
+  }
+
+  return true;
+}
+
 int RefactorizationSolver::setup_factorization()
 {
+  if(!validate_system_matrix("KLU analysis")) {
+    return -1;
+  }
+
   int* row_ptr = mat_A_csr_->get_irows_host();
   int* col_idx = mat_A_csr_->get_jcols_host();
 
@@ -190,6 +249,10 @@ int RefactorizationSolver::factorize()
 
 void RefactorizationSolver::setup_refactorization()
 {
+  if(!validate_system_matrix("refactorization setup")) {
+    return;
+  }
+
   if(refact_ == "glu") {
     initializeCusolverGLU();
     refactorizationSetupCusolverGLU();
@@ -206,6 +269,10 @@ void RefactorizationSolver::setup_refactorization()
 
 int RefactorizationSolver::refactorize()
 {
+  if(!validate_system_matrix("refactorization")) {
+    return -1;
+  }
+
   if(refact_ == "glu") {
     sp_status_ = cusolverSpDgluReset(handle_cusolver_,
                                      n_,
@@ -542,6 +609,10 @@ int RefactorizationSolver::refactorizationSetupCusolverGLU()
 
 int RefactorizationSolver::refactorizationSetupCusolverRf()
 {
+  if(!validate_klu_factorization("cuSOLVER RF setup")) {
+    return -1;
+  }
+
   // for now this ONLY WORKS if preceeded by KLU. Might be worth decoupling
   // later
   const int nnzL = Numeric_->lnz;

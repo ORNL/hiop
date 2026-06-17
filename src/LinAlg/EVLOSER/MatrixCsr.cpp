@@ -129,6 +129,64 @@ void MatrixCsr::copy_to_host_mirror()
   checkCudaErrors(cudaMemcpy(vals_host_, vals_, sizeof(double) * nnz_, cudaMemcpyDeviceToHost));
 }
 
+bool MatrixCsr::validate_host_structure(const char* caller, bool silent_output) const
+{
+  const char* caller_name = caller == nullptr ? "unknown caller" : caller;
+
+  auto report = [&](const std::string& message) {
+    if(!silent_output) {
+      std::cout << "[EVLOSER] Invalid CSR matrix in " << caller_name << ": " << message << "\n";
+    }
+    return false;
+  };
+
+  if(n_ <= 0) {
+    return report("matrix dimension must be positive");
+  }
+
+  if(nnz_ < 0) {
+    return report("number of nonzeros is negative");
+  }
+
+  if(irows_host_ == nullptr) {
+    return report("host row pointer is null");
+  }
+
+  if(irows_host_[0] != 0) {
+    return report("row pointer must start at zero");
+  }
+
+  for(int row = 0; row < n_; ++row) {
+    if(irows_host_[row] > irows_host_[row + 1]) {
+      return report("row pointer is not monotone");
+    }
+  }
+
+  if(irows_host_[n_] != nnz_) {
+    return report("final row pointer does not match nnz");
+  }
+
+  if(nnz_ == 0) {
+    return true;
+  }
+
+  if(jcols_host_ == nullptr) {
+    return report("host column index array is null");
+  }
+
+  if(vals_host_ == nullptr) {
+    return report("host value array is null");
+  }
+
+  for(int k = 0; k < nnz_; ++k) {
+    if(jcols_host_[k] < 0 || jcols_host_[k] >= n_) {
+      return report("column index out of range");
+    }
+  }
+
+  return true;
+}
+
 // Error checking utility for CUDA
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>

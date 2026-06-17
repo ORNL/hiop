@@ -222,6 +222,9 @@ private:
    */
   int createM(const int n, const int nnzL, const int* Lp, const int* Li, const int nnzU, const int* Up, const int* Ui);
 
+  bool validate_system_matrix(const char* caller) const;
+  bool validate_klu_factorization(const char* caller) const;
+
   int initializeKLU();
   int initializeCusolverGLU();
   int initializeCusolverRf();

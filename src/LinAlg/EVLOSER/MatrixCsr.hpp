@@ -12,6 +12,10 @@ public:
   void allocate_nnz(int nnz);
   void clear_data();
 
+  int n() const { return n_; }
+  int nnz() const { return nnz_; }
+  bool validate_host_structure(const char* caller, bool silent_output) const;
+
   int* get_irows() { return irows_; }
 
   const int* get_irows() const { return irows_; }
