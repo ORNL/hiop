@@ -190,12 +190,14 @@ static bool parse_arguments(int argc,
 #endif
 
   // If ReSolve was selected, but inertia free approach was not, add inertia-free
+  // EVLOSER RF has the same inertia-free requirement as the ReSolve sparse-LU path.
   if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_evloser_cuda_rf || use_evloser_hip_rf) && !(inertia_free)) {
     inertia_free = true;
     printf("LU solver from ReSolve library requires inertia free approach. ");
     printf("Enabling now ...\n");
   }
 
+  // GLU and RF still share one refactorization option, so keep this conflict check explicit.
   if(use_resolve_cuda_glu && (use_resolve_cuda_rf || use_evloser_cuda_rf || use_evloser_hip_rf)) {
     use_resolve_cuda_rf = false;
     use_evloser_cuda_rf = false;
@@ -204,6 +206,7 @@ static bool parse_arguments(int argc,
     printf("Using default GLU refactorization ...\n");
   }
 
+  // ReSolve RF and EVLOSER RF select different backend classes, so only one should be active.
   if(use_resolve_cuda_rf && (use_evloser_cuda_rf || use_evloser_hip_rf)) {
     use_evloser_cuda_rf = false;
     use_evloser_hip_rf = false;
@@ -211,8 +214,11 @@ static bool parse_arguments(int argc,
     printf("Using ReSolve ...\n");
   }
 
+  // EVLOSER has separate CUDA and HIP RF flags because the HIP path disables IR below.
   if(use_evloser_cuda_rf && use_evloser_hip_rf) {
     use_evloser_hip_rf = false;
+    printf("You can select either CUDA RF or HIP RF with EVLOSER, not both. ");
+    printf("Using CUDA RF ...\n");
   }
 
 // If Ginkgo is not available, de-select it.
@@ -245,10 +251,10 @@ static void usage(const char* exeName)
       "  '-selfcheck': compares the optimal objective with a previously saved value for the "
       "problem specified by 'problem_size'. [optional]\n");
   printf(
-      "  '-use_resolve_cuda_glu': use ReSolve linear solver with KLU factorization and cusolverGLU refactorization "
+      "  '-resolve_cuda_glu': use ReSolve linear solver with KLU factorization and cusolverGLU refactorization "
       "[optional]\n");
   printf(
-      "  '-use_resolve_cuda_rf' : use ReSolve linear solver with KLU factorization and cusolverRf  refactorization "
+      "  '-resolve_cuda_rf' : use ReSolve linear solver with KLU factorization and cusolverRf refactorization "
       "[optional]\n");
   printf(
       "  '-evloser_cuda_rf' : use EVLOSER linear solver with KLU factorization and cusolverRf refactorization "
@@ -327,6 +333,7 @@ int main(int argc, char** argv)
     // only support cusolverLU right now, 2023.02.28
     // lsq initialization of the duals fails for this example since the Jacobian is rank deficient
     // use zero initialization
+    // EVLOSER uses the same refactorization option string; the solver name selects the backend.
     if(use_evloser_cuda_rf || use_evloser_hip_rf) {
       nlp.options->SetStringValue("linear_solver_sparse", "evloser");
     } else {
@@ -338,6 +345,7 @@ int main(int argc, char** argv)
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
     }
 
+    // HIP EVLOSER RF currently runs without iterative refinement.
     if(use_evloser_hip_rf) {
       nlp.options->SetStringValue("resolve_refactorization", "rf");
       nlp.options->SetIntegerValue("ir_inner_maxit", 0);

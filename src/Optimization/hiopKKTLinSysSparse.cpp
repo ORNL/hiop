@@ -58,6 +58,7 @@
 #include "hiopLinSolverSparsePARDISO.hpp"
 #endif
 #ifdef HIOP_USE_RESOLVE
+// ReSolve is still CUDA-only; EVLOSER below covers the HIP-capable sparse solver path.
 #if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
 #include "hiopLinSolverSparseReSolve.hpp"
 #endif
@@ -366,6 +367,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXYcYd::determineAndCreateLi
 
       if((nullptr == linSys_ && linear_solver == "auto") || linear_solver == "resolve") {
 #if defined(HIOP_USE_RESOLVE)
+        // Only build the ReSolve solver object when CUDA is enabled.
 #if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
         linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
 #endif
@@ -381,6 +383,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXYcYd::determineAndCreateLi
 #endif
       }
 
+      // EVLOSER has its own solver object but uses this same sparse KKT selection point.
       if(nullptr == linSys_ && linear_solver == "evloser") {
 #if defined(HIOP_USE_RESOLVE)
         linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
@@ -765,6 +768,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
       if(linear_solver == "resolve" || linear_solver == "auto") {
 #if defined(HIOP_USE_RESOLVE)
         actual_lin_solver = "ReSolve";
+        // Only build the ReSolve solver object when CUDA is enabled.
 #if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
         linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
 #endif
@@ -779,6 +783,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
 #endif
       }  // end resolve
 
+      // EVLOSER has its own solver object but uses this same sparse KKT selection point.
       if(nullptr == linSys_ && linear_solver == "evloser") {
 #if defined(HIOP_USE_RESOLVE)
         actual_lin_solver = "EVLOSER";
@@ -853,6 +858,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
 
       if(linear_solver == "resolve" || linear_solver == "auto") {
 #if defined(HIOP_USE_RESOLVE)
+        // Only build the ReSolve solver object when CUDA is enabled.
 #if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
         linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
 #endif
@@ -868,6 +874,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
 #endif
       }  // end resolve
 
+      // EVLOSER has its own solver object but uses this same sparse KKT selection point.
       if(nullptr == linSys_ && linear_solver == "evloser") {
 #if defined(HIOP_USE_RESOLVE)
         linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);

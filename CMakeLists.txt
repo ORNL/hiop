@@ -96,6 +96,7 @@ cmake_dependent_option(
 cmake_dependent_option(
   HIOP_USE_MAGMA "Use Magma linear algebra" ON "HIOP_USE_GPU" OFF
 )
+# EVLOSER uses the existing ReSolve option path, so this must cover GPU builds instead of CUDA only.
 cmake_dependent_option(
   HIOP_USE_RESOLVE "Build with ReSolve/EVLOSER sparse solver support" ON "HIOP_USE_GPU" OFF
 )
@@ -286,6 +287,7 @@ endif(HIOP_USE_GPU)
 
 if(HIOP_USE_RAJA)
   # Look for CMake configuration file in RAJA installation
+  # The RAJA driver path needs camp available with the RAJA/Umpire target set.
   find_package(camp CONFIG REQUIRED)
 
   find_package(RAJA CONFIG

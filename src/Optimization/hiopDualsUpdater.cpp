@@ -72,6 +72,7 @@
 #include "hiopLinSolverSparsePARDISO.hpp"
 #endif
 #ifdef HIOP_USE_RESOLVE
+// ReSolve is still CUDA-only; EVLOSER below covers the HIP-capable sparse solver path.
 #if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
 #include "hiopLinSolverSparseReSolve.hpp"
 #endif
@@ -431,6 +432,7 @@ bool hiopDualsLsqUpdateLinsysAugSparse::instantiate_linear_solver(const char* li
 
 #ifdef HIOP_USE_RESOLVE
       if(compute_mode == "gpu") {
+        // EVLOSER is valid here because it uses the same dual-init sparse solver path as ReSolve.
         assert((linear_solver == "resolve" || linear_solver == "evloser" || linear_solver == "auto") &&
                "the value for duals_init_linear_solver_sparse is invalid and should have been corrected during "
                "options processing");
@@ -445,10 +447,12 @@ bool hiopDualsLsqUpdateLinsysAugSparse::instantiate_linear_solver(const char* li
       // This is our first choice on the device.
       if(linear_solver == "resolve" || linear_solver == "auto") {
         ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: ReSolve ";
+        // Only build the ReSolve solver object when CUDA is enabled.
 #if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
         lin_sys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
 #endif
       }
+      // EVLOSER has its own solver object but uses this same dual-init allocation point.
       if(linear_solver == "evloser") {
         ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: EVLOSER ";
         lin_sys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);

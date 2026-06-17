@@ -54,11 +54,11 @@
 #define maxk 1024
 #define Tv5 1024
 //computes V^T[u1 u2] where v is n x k and u1 and u2 are nx1
-__global__ void evloser_MassIPTwoVec_kernel(const double* __restrict__ u1, 
-                                    const double* __restrict__ u2, 
-                                    const double* __restrict__ v, 
+__global__ void evloser_MassIPTwoVec_kernel(const double* __restrict__ u1,
+                                    const double* __restrict__ u2,
+                                    const double* __restrict__ v,
                                     double* result,
-                                    const int k, 
+                                    const int k,
                                     const int N)
 {
   int t = threadIdx.x;
@@ -168,10 +168,10 @@ __global__ void evloser_massAxpy3_kernel(int N,
   }
 }
 
-__global__ void evloser_matrixInfNormPart1(const int n, 
-                                   const int nnz, 
+__global__ void evloser_matrixInfNormPart1(const int n,
+                                   const int nnz,
                                    const int* a_ia,
-                                   const double* a_val, 
+                                   const double* a_val,
                                    double* result) {
 
   // one thread per row, pass through rows
@@ -191,11 +191,11 @@ __global__ void evloser_matrixInfNormPart1(const int n,
 }
 
 
-void evloser_mass_inner_product_two_vectors(int n, 
-                                    int i, 
-                                    double* vec1, 
-                                    double* vec2, 
-                                    double* mvec, 
+void evloser_mass_inner_product_two_vectors(int n,
+                                    int i,
+                                    double* vec1,
+                                    double* vec2,
+                                    double* mvec,
                                     double* result)
 {
   evloser_MassIPTwoVec_kernel<<<i + 1, 1024>>>(vec1, vec2, mvec, result, i + 1, n);
@@ -205,10 +205,10 @@ void evloser_mass_axpy(int n, int i, double* x, double* y, double* alpha)
   evloser_massAxpy3_kernel<<<(n + 384 - 1) / 384, 384>>>(n, i + 1, x, y, alpha);
 }
 
-void evloser_matrix_row_sums(int n, 
-                     int nnz, 
+void evloser_matrix_row_sums(int n,
+                     int nnz,
                      int* a_ia,
-                     double* a_val, 
+                     double* a_val,
                      double* result)
 {
   evloser_matrixInfNormPart1<<<1000,1024>>>(n, nnz, a_ia, a_val, result);

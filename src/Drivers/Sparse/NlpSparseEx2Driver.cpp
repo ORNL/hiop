@@ -151,6 +151,7 @@ static bool parse_arguments(int argc,
 
 // Use cuSOLVER's LU factorization, if it was configured
 #ifdef HIOP_USE_RESOLVE
+  // EVLOSER uses the existing ReSolve-enabled sparse solver setup in this driver.
   if(use_cusolver || use_evloser) {
     use_resolve = true;
   }
@@ -159,7 +160,7 @@ static bool parse_arguments(int argc,
   // If cuSOLVER was selected, but inertia free approach was not, add inertia-free
   if((use_cusolver || use_evloser) && !(inertia_free)) {
     inertia_free = true;
-    printf("LU solver from ReSolve library requires inertia free approach. ");
+    printf("Selected LU sparse solver requires inertia free approach. ");
     printf("Enabling now ...\n");
   }
 
@@ -260,6 +261,7 @@ int main(int argc, char** argv)
     if(use_resolve) {
       nlp.options->SetStringValue("duals_init", "zero");
       nlp.options->SetStringValue("linsol_mode", "speculative");
+      // EVLOSER keeps the ReSolve RF settings below but selects the EVLOSER solver name.
       if(use_evloser) {
         nlp.options->SetStringValue("linear_solver_sparse", "evloser");
       } else {

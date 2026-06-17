@@ -922,6 +922,7 @@ void hiopOptionsNLP::register_options()
   //     - 'gpu' compute mode: work in progress
 
   {
+    // EVLOSER is a separate sparse solver option while the old ReSolve option stays available.
     vector<string> range{"auto", "ma57", "pardiso", "strumpack", "resolve", "evloser", "ginkgo", "cusolver-chol"};
 
     register_str_option("linear_solver_sparse",
@@ -936,6 +937,7 @@ void hiopOptionsNLP::register_options()
   //  - when GPU mode is on, STRUMPACK is chosen by 'auto' if available
   //  - choosing option ma57 or pardiso with GPU being on, it results in no device being used in the linear solve!
   {
+    // EVLOSER is also valid for dual initialization through the same sparse solver path.
     vector<string> range{"auto", "ma57", "pardiso", "resolve", "evloser", "strumpack", "ginkgo"};
 
     register_str_option("duals_init_linear_solver_sparse",
@@ -1402,6 +1404,7 @@ void hiopOptionsNLP::ensure_consistence()
   auto kkt_linsys = GetString("KKTLinsys");
   auto sol_sp = GetString("linear_solver_sparse");
   if(kkt_linsys == "full") {
+    // Full sparse KKT accepts EVLOSER through the same sparse solver selection path as ReSolve.
     if(sol_sp != "resolve" && sol_sp != "evloser" && sol_sp != "pardiso" && sol_sp != "strumpack" && sol_sp != "auto") {
       if(is_user_defined("linear_solver_sparse")) {
         log_printf(hovWarning,
@@ -1425,7 +1428,7 @@ void hiopOptionsNLP::ensure_consistence()
     }
   }
 
-// EVLOSER requires either CUDA or HIP support.
+// EVLOSER can use CUDA or HIP, unlike the CUDA-only ReSolve path below.
 #if !defined(HIOP_USE_CUDA) && !defined(HIOP_USE_HIP)
   if(sol_sp == "evloser") {
     if(is_user_defined("linear_solver_sparse")) {
@@ -1572,6 +1575,7 @@ void hiopOptionsNLP::ensure_consistence()
       }
       set_val("fact_acceptor", "inertia_free");
     }
+  // EVLOSER follows the same inertia-free fact_acceptor rule as the other sparse direct solvers.
   } else if(GetString("linear_solver_sparse") == "strumpack" || GetString("linear_solver_sparse") == "resolve" ||
             GetString("linear_solver_sparse") == "evloser") {
     if(GetString("fact_acceptor") == "inertia_correction") {

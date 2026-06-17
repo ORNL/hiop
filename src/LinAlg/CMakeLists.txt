@@ -102,6 +102,7 @@ set(hiopLinAlg_CUSOLVER_LU_SRC
   hiopLinSolverSparseReSolve.cpp
 )
 
+# EVLOSER wrapper source is separate from the ReSolve wrapper. If EVLOSER replaces ReSolve, merge this source path intentionally.
 set(hiopLinAlg_EVLOSER_SRC
   hiopLinSolverSparseEVLOSER.cpp
 )
@@ -154,12 +155,14 @@ if(HIOP_SPARSE)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_PARDISO_SRC})
     endif(HIOP_USE_PARDISO)
     if(HIOP_USE_RESOLVE)
+      # ReSolve stays CUDA-only here; EVLOSER below covers the HIP-capable backend path.
       if(HIOP_USE_CUDA)
         add_subdirectory(ReSolve)
         list(APPEND hiopLinAlg_SRC ${hiopLinAlg_CUSOLVER_LU_SRC})
         set_source_files_properties(${hiopLinAlg_CUSOLVER_LU_SRC} PROPERTIES LANGUAGE CUDA)
       endif(HIOP_USE_CUDA)
 
+      # EVLOSER uses its own backend directory while sharing the existing sparse solver option path.
       add_subdirectory(EVLOSER)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_EVLOSER_SRC})
 
@@ -234,9 +237,11 @@ install(
 
 add_library(hiopLinAlg OBJECT ${hiopLinAlg_SRC})
 if(HIOP_USE_RESOLVE)
+   # Link EVLOSER separately so HIP builds do not require the CUDA-only ReSolve target.
    target_link_libraries(hiop_tpl INTERFACE EVLOSER)
    install(TARGETS EVLOSER EXPORT hiop-targets)
 
+   # Keep ReSolve linked only for CUDA builds.
    if(HIOP_USE_CUDA)
       target_link_libraries(hiop_tpl INTERFACE ReSolve)
       install(TARGETS ReSolve EXPORT hiop-targets)

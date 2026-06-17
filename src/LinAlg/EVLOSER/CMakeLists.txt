@@ -14,6 +14,15 @@ if(HIOP_USE_CUDA)
 endif()
 
 add_library(EVLOSER STATIC ${EVLOSER_SRC})
+
+if(HIOP_USE_CUDA)
+  target_compile_definitions(EVLOSER PRIVATE HIOP_USE_CUDA)
+endif()
+
+if(HIOP_USE_HIP)
+  target_compile_definitions(EVLOSER PRIVATE HIOP_USE_HIP)
+endif()
+
 target_include_directories(EVLOSER INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>

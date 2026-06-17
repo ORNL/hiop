@@ -175,7 +175,7 @@ bool extract_klu_factors(klu_numeric* numeric,
 
   if(ok == 0) {
     if(!silent_output) {
-      std::cout << "[EVLOSER] klu_extract failed while preparing cuSOLVER RF setup\n";
+      std::cout << "[EVLOSER] klu_extract failed while preparing GPU RF setup\n";
     }
     return false;
   }

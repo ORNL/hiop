@@ -8,7 +8,7 @@
 #ifndef EVLOSER_GPU_DEFS_H
 #define EVLOSER_GPU_DEFS_H
 
-#if defined(HIOP_USE_CUDA)
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
 
 #include "evloser_cusolver_defs.hpp"
 

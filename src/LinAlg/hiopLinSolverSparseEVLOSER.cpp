@@ -61,7 +61,7 @@
 
 #include "hiop_blasdefs.hpp"
 
-#ifdef HIOP_USE_CUDA
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
 #include "cusparse_v2.h"
 #endif
 
@@ -71,7 +71,7 @@
 #include <string>
 #include <vector>
 
-#define checkCudaErrors(val) hiopCheckCudaError((val), __FILE__, __LINE__)
+#define checkGpuErrors(val) hiopCheckGpuError((val), __FILE__, __LINE__)
 
 /**
  * @brief Map elements of one array to the other
@@ -277,8 +277,8 @@ hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
   // Delete CSR <--> triplet mappings
   delete[] index_convert_CSR2Triplet_host_;
   delete[] index_convert_extra_Diag2CSR_host_;
-  checkCudaErrors(evloserGpuFree(index_convert_CSR2Triplet_device_));
-  checkCudaErrors(evloserGpuFree(index_convert_extra_Diag2CSR_device_));
+  checkGpuErrors(evloserGpuFree(index_convert_CSR2Triplet_device_));
+  checkGpuErrors(evloserGpuFree(index_convert_extra_Diag2CSR_device_));
 }
 
 int hiopLinSolverSymSparseEVLOSER::matrixChanged()
@@ -346,13 +346,13 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
   // If the matrix is on device, copy it to the host mirror
   std::string mem_space = nlp_->options->GetString("mem_space");
   if(mem_space == "device") {
-    checkCudaErrors(
+    checkGpuErrors(
       evloserGpuMemcpy(M_host_->M(), M_->M(), sizeof(double) * M_->numberOfNonzeros(), evloserMemcpyDeviceToHost));
-    checkCudaErrors(evloserGpuMemcpy(M_host_->i_row(),
+    checkGpuErrors(evloserGpuMemcpy(M_host_->i_row(),
                                   M_->i_row(),
                                   sizeof(index_type) * M_->numberOfNonzeros(),
                                   evloserMemcpyDeviceToHost));
-    checkCudaErrors(evloserGpuMemcpy(M_host_->j_col(),
+    checkGpuErrors(evloserGpuMemcpy(M_host_->j_col(),
                                   M_->j_col(),
                                   sizeof(index_type) * M_->numberOfNonzeros(),
                                   evloserMemcpyDeviceToHost));
@@ -408,7 +408,7 @@ void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 
     // If factorization was not successful, we need a copy of values on the host
     if(factorizationSetupSucc_ == 0)
-      checkCudaErrors(evloserGpuMemcpy(solver_->mat_A_csr()->host_vals(),
+      checkGpuErrors(evloserGpuMemcpy(solver_->mat_A_csr()->host_vals(),
                                  solver_->mat_A_csr()->device_vals(),
                                  sizeof(double) * nnz_,
                                  evloserMemcpyDeviceToHost));
@@ -424,7 +424,7 @@ void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
       if(index_convert_extra_Diag2CSR_host_[i] != -1)
         vals[index_convert_extra_Diag2CSR_host_[i]] += M_->M()[M_->numberOfNonzeros() - n_ + i];
     }
-    checkCudaErrors(evloserGpuMemcpy(solver_->mat_A_csr()->device_vals(),
+    checkGpuErrors(evloserGpuMemcpy(solver_->mat_A_csr()->device_vals(),
                                solver_->mat_A_csr()->host_vals(),
                                sizeof(double) * nnz_,
                                evloserMemcpyHostToDevice));
@@ -494,8 +494,8 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
   index_convert_CSR2Triplet_host_ = new int[nnz_];
   index_convert_extra_Diag2CSR_host_ = new int[n_];
-  checkCudaErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), nnz_ * sizeof(int)));
-  checkCudaErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_extra_Diag2CSR_device_), n_ * sizeof(int)));
+  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), nnz_ * sizeof(int)));
+  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_extra_Diag2CSR_device_), n_ * sizeof(int)));
 
   int* nnz_each_row_tmp = new int[n_]{0};
   int total_nnz_tmp{0}, nnz_tmp{0}, rowID_tmp, colID_tmp;
@@ -555,11 +555,11 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       std::sort(col_idx + row_ptr[i], col_idx + row_ptr[i + 1]);
     }
   }
-  checkCudaErrors(evloserGpuMemcpy(index_convert_CSR2Triplet_device_,
+  checkGpuErrors(evloserGpuMemcpy(index_convert_CSR2Triplet_device_,
                              index_convert_CSR2Triplet_host_,
                              nnz_ * sizeof(int),
                              evloserMemcpyHostToDevice));
-  checkCudaErrors(evloserGpuMemcpy(index_convert_extra_Diag2CSR_device_,
+  checkGpuErrors(evloserGpuMemcpy(index_convert_extra_Diag2CSR_device_,
                              index_convert_extra_Diag2CSR_host_,
                              n_ * sizeof(int),
                              evloserMemcpyHostToDevice));
@@ -569,7 +569,7 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 // Error checking utility for CUDA
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>
-void hiopLinSolverSymSparseEVLOSER::hiopCheckCudaError(T result, const char* const file, int const line)
+void hiopLinSolverSymSparseEVLOSER::hiopCheckGpuError(T result, const char* const file, int const line)
 {
   if(result) {
     nlp_->log->printf(hovError, "CUDA error at %s:%d, error# %d\n", file, line, result);

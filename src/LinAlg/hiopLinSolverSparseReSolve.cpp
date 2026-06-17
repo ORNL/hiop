@@ -54,12 +54,16 @@
  */
 
 #include "hiopLinSolverSparseReSolve.hpp"
-#include <IterativeRefinement.hpp>
-#include <RefactorizationSolver.hpp>
-#include <MatrixCsr.hpp>
+// Use the ReSolve path here because EVLOSER has headers with the same names.
+// If EVLOSER replaces ReSolve, update this backend path instead of doing only
+// a find-and-replace.
+#include "ReSolve/IterativeRefinement.hpp"
+#include "ReSolve/RefactorizationSolver.hpp"
+#include "ReSolve/MatrixCsr.hpp"
 
 #include "hiop_blasdefs.hpp"
-#include "KrylovSolverKernels.h"
+// Use the ReSolve path here because EVLOSER has a kernel header with this name too.
+#include "ReSolve/KrylovSolverKernels.h"
 
 #include "cusparse_v2.h"
 #include <sstream>

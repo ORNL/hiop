@@ -75,6 +75,12 @@ inline evloserGpuError_t evloserGpuMalloc(void** ptr, size_t size)
   return cudaMalloc(ptr, size);
 }
 
+template<typename T>
+inline evloserGpuError_t evloserGpuMalloc(T** ptr, size_t size)
+{
+  return cudaMalloc(reinterpret_cast<void**>(ptr), size);
+}
+
 inline evloserGpuError_t evloserGpuFree(void* ptr)
 {
   return cudaFree(ptr);

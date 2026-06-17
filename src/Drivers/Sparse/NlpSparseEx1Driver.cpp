@@ -124,6 +124,7 @@ static bool parse_arguments(int argc,
     scal = 1.0;
   }
 
+  // EVLOSER follows the same sparse-LU driver path as cuSOLVER here.
   if((use_cusolver || use_evloser) && use_pardiso) {
     printf("Selected both, cuSOLVER and Pardiso. ");
     printf("You can select only one linear solver.\n\n");
@@ -242,6 +243,7 @@ int main(int argc, char** argv)
   if(use_pardiso) {
     nlp.options->SetStringValue("linear_solver_sparse", "pardiso");
   }
+  // EVLOSER keeps the ReSolve RF settings below but selects the EVLOSER solver name.
   if(use_cusolver || use_evloser) {
     nlp.options->SetStringValue("duals_init", "zero");
     nlp.options->SetStringValue("linsol_mode", "speculative");

@@ -153,7 +153,7 @@ protected:
   void set_csr_indices_values();
 
   template<typename T>
-  void hiopCheckCudaError(T result, const char* const file, int const line);
+  void hiopCheckGpuError(T result, const char* const file, int const line);
 };
 
 }  // namespace hiop
