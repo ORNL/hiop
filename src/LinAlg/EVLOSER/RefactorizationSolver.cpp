@@ -322,13 +322,33 @@ RefactorizationSolver::~RefactorizationSolver()
 
 void RefactorizationSolver::enable_iterative_refinement()
 {
-  ir_ = new IterativeRefinement();
-  if(ir_ != nullptr) iterative_refinement_enabled_ = true;
+  if(ir_ == nullptr) {
+    ir_ = new IterativeRefinement();
+  }
+
+  iterative_refinement_enabled_ = (ir_ != nullptr);
+}
+
+void RefactorizationSolver::disable_iterative_refinement()
+{
+  delete ir_;
+  ir_ = nullptr;
+  iterative_refinement_enabled_ = false;
+  use_ir_ = "no";
+}
+
+bool RefactorizationSolver::iterative_refinement_active() const
+{
+  return iterative_refinement_enabled_ && ir_ != nullptr && use_ir_ == "yes";
 }
 
 // TODO: Refactor to only pass mat_A_csr_ to setup_system_matrix; n and nnz can be read from mat_A_csr_
 void RefactorizationSolver::setup_iterative_refinement_matrix(int n, int nnz)
 {
+  if(!iterative_refinement_active()) {
+    return;
+  }
+
   ir_->setup_system_matrix(n, nnz, mat_A_csr_->device_irows(), mat_A_csr_->device_jcols(), mat_A_csr_->device_vals());
 }
 
@@ -343,6 +363,10 @@ void RefactorizationSolver::configure_iterative_refinement(cusparseHandle_t cusp
                                                            double* devx,
                                                            double* devr)
 {
+  if(!iterative_refinement_active()) {
+    return;
+  }
+
   ir_->setup(cusparse_handle, cublas_handle, cusolverrf_handle, n, d_T, d_P, d_Q, devx, devr);
 }
 
@@ -496,7 +520,7 @@ void RefactorizationSolver::setup_refactorization()
       assert(false && "cuSOLVER RF setup failed.");
       return;
     }
-    if(use_ir_ == "yes") {
+    if(iterative_refinement_active()) {
       configure_iterative_refinement(handle_, handle_cublas_, handle_rf_, n_, d_T_, d_P_, d_Q_, devx_, devr_);
     }
   } else {  // for future -
@@ -617,7 +641,7 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
       return false;
     }
 
-    if(use_ir_ == "yes") {
+    if(iterative_refinement_active()) {
       // Set tolerance based on barrier parameter mu
       ir_->set_tol(tol);
 

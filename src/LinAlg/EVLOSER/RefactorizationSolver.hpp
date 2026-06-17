@@ -79,6 +79,8 @@ public:
   ~RefactorizationSolver();
 
   void enable_iterative_refinement();
+  void disable_iterative_refinement();
+  bool iterative_refinement_active() const;
   void setup_iterative_refinement_matrix(int n, int nnz);
   void configure_iterative_refinement(cusparseHandle_t cusparse_handle,
                                       cublasHandle_t cublas_handle,

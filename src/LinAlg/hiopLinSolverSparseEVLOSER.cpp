@@ -181,6 +181,8 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     use_ir = "yes";
     solver_->enable_iterative_refinement();
     solver_->ir()->maxit() = maxit_test;
+  } else {
+    solver_->disable_iterative_refinement();
   }
   if(use_ir == "yes") {
     if((refact == "rf")) {
@@ -245,6 +247,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     } else {
       nlp_->log->printf(hovWarning, "Currently, inner iterative refinement works ONLY with cuSolverRf ... \n");
       use_ir = "no";
+      solver_->disable_iterative_refinement();
     }
   }
   solver_->use_ir() = use_ir;
