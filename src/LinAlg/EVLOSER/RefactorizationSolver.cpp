@@ -69,6 +69,197 @@
 namespace EVLOSER
 {
 
+namespace
+{
+
+struct KluFactorData
+{
+  int nnzL{0};
+  int nnzU{0};
+  std::vector<int> Lp;
+  std::vector<int> Li;
+  std::vector<double> Lx;
+  std::vector<int> Up;
+  std::vector<int> Ui;
+  std::vector<double> Ux;
+};
+
+struct HostCsrFactor
+{
+  std::vector<int> rowptr;
+  std::vector<int> colind;
+  std::vector<double> values;
+};
+
+bool validate_csc_factor(const char* name, int n, int nnz, const std::vector<int>& colptr, const std::vector<int>& rowind, bool silent_output)
+{
+  auto report = [&](const std::string& message) {
+    if(!silent_output) {
+      std::cout << "[EVLOSER] Invalid KLU " << name << " factor: " << message << "\n";
+    }
+    return false;
+  };
+
+  if(n <= 0) {
+    return report("factor dimension must be positive");
+  }
+
+  if(nnz < 0) {
+    return report("number of nonzeros is negative");
+  }
+
+  if(static_cast<int>(colptr.size()) != n + 1) {
+    return report("column pointer size does not match dimension");
+  }
+
+  if(static_cast<int>(rowind.size()) != nnz) {
+    return report("row index size does not match nnz");
+  }
+
+  if(colptr[0] != 0) {
+    return report("column pointer must start at zero");
+  }
+
+  for(int col = 0; col < n; ++col) {
+    if(colptr[col] > colptr[col + 1]) {
+      return report("column pointer is not monotone");
+    }
+  }
+
+  if(colptr[n] != nnz) {
+    return report("final column pointer does not match nnz");
+  }
+
+  for(int k = 0; k < nnz; ++k) {
+    if(rowind[k] < 0 || rowind[k] >= n) {
+      return report("row index out of range");
+    }
+  }
+
+  return true;
+}
+
+bool extract_klu_factors(klu_numeric* numeric,
+                         klu_symbolic* symbolic,
+                         klu_common& common,
+                         int n,
+                         KluFactorData& factors,
+                         bool silent_output)
+{
+  factors.nnzL = numeric->lnz;
+  factors.nnzU = numeric->unz;
+
+  factors.Lp.assign(n + 1, 0);
+  factors.Li.assign(factors.nnzL, 0);
+  factors.Lx.assign(factors.nnzL, 0.0);
+  factors.Up.assign(n + 1, 0);
+  factors.Ui.assign(factors.nnzU, 0);
+  factors.Ux.assign(factors.nnzU, 0.0);
+
+  const int ok = klu_extract(numeric,
+                             symbolic,
+                             factors.Lp.data(),
+                             factors.Li.data(),
+                             factors.Lx.data(),
+                             factors.Up.data(),
+                             factors.Ui.data(),
+                             factors.Ux.data(),
+                             nullptr,
+                             nullptr,
+                             nullptr,
+                             nullptr,
+                             nullptr,
+                             nullptr,
+                             nullptr,
+                             &common);
+
+  if(ok == 0) {
+    if(!silent_output) {
+      std::cout << "[EVLOSER] klu_extract failed while preparing cuSOLVER RF setup\n";
+    }
+    return false;
+  }
+
+  return validate_csc_factor("L", n, factors.nnzL, factors.Lp, factors.Li, silent_output) &&
+         validate_csc_factor("U", n, factors.nnzU, factors.Up, factors.Ui, silent_output);
+}
+
+HostCsrFactor convert_csc_to_csr(int n,
+                                 int nnz,
+                                 const std::vector<int>& colptr,
+                                 const std::vector<int>& rowind,
+                                 const std::vector<double>& values)
+{
+  HostCsrFactor csr;
+  csr.rowptr.assign(n + 1, 0);
+  csr.colind.assign(nnz, 0);
+  csr.values.assign(nnz, 0.0);
+
+  for(int col = 0; col < n; ++col) {
+    for(int k = colptr[col]; k < colptr[col + 1]; ++k) {
+      csr.rowptr[rowind[k] + 1]++;
+    }
+  }
+
+  for(int row = 0; row < n; ++row) {
+    csr.rowptr[row + 1] += csr.rowptr[row];
+  }
+
+  std::vector<int> offsets = csr.rowptr;
+  for(int col = 0; col < n; ++col) {
+    for(int k = colptr[col]; k < colptr[col + 1]; ++k) {
+      const int row = rowind[k];
+      const int dest = offsets[row]++;
+      csr.colind[dest] = col;
+      csr.values[dest] = values[k];
+    }
+  }
+
+  return csr;
+}
+
+bool validate_host_csr_factor(const char* name, int n, int nnz, const HostCsrFactor& csr, bool silent_output)
+{
+  auto report = [&](const std::string& message) {
+    if(!silent_output) {
+      std::cout << "[EVLOSER] Invalid host CSR " << name << " factor: " << message << "\n";
+    }
+    return false;
+  };
+
+  if(static_cast<int>(csr.rowptr.size()) != n + 1) {
+    return report("row pointer size does not match dimension");
+  }
+
+  if(static_cast<int>(csr.colind.size()) != nnz || static_cast<int>(csr.values.size()) != nnz) {
+    return report("column/value array size does not match nnz");
+  }
+
+  if(csr.rowptr[0] != 0) {
+    return report("row pointer must start at zero");
+  }
+
+  for(int row = 0; row < n; ++row) {
+    if(csr.rowptr[row] > csr.rowptr[row + 1]) {
+      return report("row pointer is not monotone");
+    }
+  }
+
+  if(csr.rowptr[n] != nnz) {
+    return report("final row pointer does not match nnz");
+  }
+
+  for(int k = 0; k < nnz; ++k) {
+    if(csr.colind[k] < 0 || csr.colind[k] >= n) {
+      return report("column index out of range");
+    }
+  }
+
+  return true;
+}
+
+}  // namespace
+
 RefactorizationSolver::RefactorizationSolver(int n)
     : n_(n)
 {
@@ -609,214 +800,57 @@ int RefactorizationSolver::refactorizationSetupCusolverGLU()
 
 int RefactorizationSolver::refactorizationSetupCusolverRf()
 {
+  // For now this path requires a prior KLU factorization.
   if(!validate_klu_factorization("cuSOLVER RF setup")) {
     return -1;
   }
 
-  // for now this ONLY WORKS if preceeded by KLU. Might be worth decoupling
-  // later
-  const int nnzL = Numeric_->lnz;
-  const int nnzU = Numeric_->unz;
+  KluFactorData factors;
+  if(!extract_klu_factors(Numeric_, Symbolic_, Common_, n_, factors, silent_output_)) {
+    return -1;
+  }
 
-  checkCudaErrors(cudaMalloc(&d_P_, (n_) * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Q_, (n_) * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_T_, (n_) * sizeof(double)));
+  HostCsrFactor L_csr = convert_csc_to_csr(n_, factors.nnzL, factors.Lp, factors.Li, factors.Lx);
+  HostCsrFactor U_csr = convert_csc_to_csr(n_, factors.nnzU, factors.Up, factors.Ui, factors.Ux);
 
-  checkCudaErrors(cudaMemcpy(d_P_, Numeric_->Pnum, sizeof(int) * (n_), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_Q_, Symbolic_->Q, sizeof(int) * (n_), cudaMemcpyHostToDevice));
+  if(!validate_host_csr_factor("L", n_, factors.nnzL, L_csr, silent_output_)) {
+    return -1;
+  }
 
-  int* Lp = new int[n_ + 1];
-  int* Li = new int[nnzL];
-  double* Lx = new double[nnzL];
-  int* Up = new int[n_ + 1];
-  int* Ui = new int[nnzU];
-  double* Ux = new double[nnzU];
+  if(!validate_host_csr_factor("U", n_, factors.nnzU, U_csr, silent_output_)) {
+    return -1;
+  }
 
-  int ok = klu_extract(Numeric_,
-                       Symbolic_,
-                       Lp,
-                       Li,
-                       Lx,
-                       Up,
-                       Ui,
-                       Ux,
-                       nullptr,
-                       nullptr,
-                       nullptr,
-                       nullptr,
-                       nullptr,
-                       nullptr,
-                       nullptr,
-                       &Common_);
+  checkCudaErrors(cudaMalloc(&d_P_, n_ * sizeof(int)));
+  checkCudaErrors(cudaMalloc(&d_Q_, n_ * sizeof(int)));
+  checkCudaErrors(cudaMalloc(&d_T_, n_ * sizeof(double)));
 
-  /* CSC */
-  int* d_Lp;
-  int* d_Li;
-  int* d_Up;
-  int* d_Ui;
-  double* d_Lx;
-  double* d_Ux;
-  /* CSR */
-  int* d_Lp_csr;
-  int* d_Li_csr;
-  int* d_Up_csr;
-  int* d_Ui_csr;
-  double* d_Lx_csr;
-  double* d_Ux_csr;
+  checkCudaErrors(cudaMemcpy(d_P_, Numeric_->Pnum, n_ * sizeof(int), cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMemcpy(d_Q_, Symbolic_->Q, n_ * sizeof(int), cudaMemcpyHostToDevice));
 
-  /* allocate CSC */
-  checkCudaErrors(cudaMalloc(&d_Lp, (n_ + 1) * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Li, nnzL * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Lx, nnzL * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Up, (n_ + 1) * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Ui, nnzU * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Ux, nnzU * sizeof(double)));
+  sp_status_ = cusolverRfSetupHost(n_,
+                                   nnz_,
+                                   mat_A_csr_->host_irows(),
+                                   mat_A_csr_->host_jcols(),
+                                   mat_A_csr_->host_vals(),
+                                   factors.nnzL,
+                                   L_csr.rowptr.data(),
+                                   L_csr.colind.data(),
+                                   L_csr.values.data(),
+                                   factors.nnzU,
+                                   U_csr.rowptr.data(),
+                                   U_csr.colind.data(),
+                                   U_csr.values.data(),
+                                   Numeric_->Pnum,
+                                   Symbolic_->Q,
+                                   handle_rf_);
+  assert(CUSOLVER_STATUS_SUCCESS == sp_status_);
 
-  /* allocate CSR */
-  checkCudaErrors(cudaMalloc(&d_Lp_csr, (n_ + 1) * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Li_csr, nnzL * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Lx_csr, nnzL * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Up_csr, (n_ + 1) * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Ui_csr, nnzU * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Ux_csr, nnzU * sizeof(double)));
-
-  /* copy CSC to the GPU */
-  checkCudaErrors(cudaMemcpy(d_Lp, Lp, sizeof(int) * (n_ + 1), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_Li, Li, sizeof(int) * (nnzL), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_Lx, Lx, sizeof(double) * (nnzL), cudaMemcpyHostToDevice));
-
-  checkCudaErrors(cudaMemcpy(d_Up, Up, sizeof(int) * (n_ + 1), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_Ui, Ui, sizeof(int) * (nnzU), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_Ux, Ux, sizeof(double) * (nnzU), cudaMemcpyHostToDevice));
-
-  /* we dont need these any more */
-  delete[] Lp;
-  delete[] Li;
-  delete[] Lx;
-  delete[] Up;
-  delete[] Ui;
-  delete[] Ux;
-
-  /* now CSC to CSR using the new cuda 11 awkward way */
-  size_t bufferSizeL;
-  size_t bufferSizeU;
-
-  cusparseStatus_t csp = cusparseCsr2cscEx2_bufferSize(handle_,
-                                                       n_,
-                                                       n_,
-                                                       nnzL,
-                                                       d_Lx,
-                                                       d_Lp,
-                                                       d_Li,
-                                                       d_Lx_csr,
-                                                       d_Lp_csr,
-                                                       d_Li_csr,
-                                                       CUDA_R_64F,
-                                                       CUSPARSE_ACTION_NUMERIC,
-                                                       CUSPARSE_INDEX_BASE_ZERO,
-                                                       CUSPARSE_CSR2CSC_ALG1,
-                                                       &bufferSizeL);
-
-  csp = cusparseCsr2cscEx2_bufferSize(handle_,
-                                      n_,
-                                      n_,
-                                      nnzU,
-                                      d_Ux,
-                                      d_Up,
-                                      d_Ui,
-                                      d_Ux_csr,
-                                      d_Up_csr,
-                                      d_Ui_csr,
-                                      CUDA_R_64F,
-                                      CUSPARSE_ACTION_NUMERIC,
-                                      CUSPARSE_INDEX_BASE_ZERO,
-                                      CUSPARSE_CSR2CSC_ALG1,
-                                      &bufferSizeU);
-  /* allocate buffers */
-
-  double* d_workL;
-  double* d_workU;
-  checkCudaErrors(cudaMalloc((void**)&d_workL, bufferSizeL));
-  checkCudaErrors(cudaMalloc((void**)&d_workU, bufferSizeU));
-
-  /* actual CSC to CSR */
-
-  csp = cusparseCsr2cscEx2(handle_,
-                           n_,
-                           n_,
-                           nnzL,
-                           d_Lx,
-                           d_Lp,
-                           d_Li,
-                           d_Lx_csr,
-                           d_Lp_csr,
-                           d_Li_csr,
-                           CUDA_R_64F,
-                           CUSPARSE_ACTION_NUMERIC,
-                           CUSPARSE_INDEX_BASE_ZERO,
-                           CUSPARSE_CSR2CSC_ALG1,
-                           d_workL);
-
-  csp = cusparseCsr2cscEx2(handle_,
-                           n_,
-                           n_,
-                           nnzU,
-                           d_Ux,
-                           d_Up,
-                           d_Ui,
-                           d_Ux_csr,
-                           d_Up_csr,
-                           d_Ui_csr,
-                           CUDA_R_64F,
-                           CUSPARSE_ACTION_NUMERIC,
-                           CUSPARSE_INDEX_BASE_ZERO,
-                           CUSPARSE_CSR2CSC_ALG1,
-                           d_workU);
-
-  (void)csp;  // mute unused variable warnings
-
-  /* CSC no longer needed, nor the work arrays! */
-
-  cudaFree(d_Lp);
-  cudaFree(d_Li);
-  cudaFree(d_Lx);
-
-  cudaFree(d_Up);
-  cudaFree(d_Ui);
-  cudaFree(d_Ux);
-
-  cudaFree(d_workU);
-  cudaFree(d_workL);
-
-  /* actual setup */
-
-  sp_status_ = cusolverRfSetupDevice(n_,
-                                     nnz_,
-                                     mat_A_csr_->device_irows(),  // dia_,
-                                     mat_A_csr_->device_jcols(),  // dja_,
-                                     mat_A_csr_->device_vals(),   // da_,
-                                     nnzL,
-                                     d_Lp_csr,
-                                     d_Li_csr,
-                                     d_Lx_csr,
-                                     nnzU,
-                                     d_Up_csr,
-                                     d_Ui_csr,
-                                     d_Ux_csr,
-                                     d_P_,
-                                     d_Q_,
-                                     handle_rf_);
-  cudaDeviceSynchronize();
   sp_status_ = cusolverRfAnalyze(handle_rf_);
+  assert(CUSOLVER_STATUS_SUCCESS == sp_status_);
 
-  // clean up
-  cudaFree(d_Lp_csr);
-  cudaFree(d_Li_csr);
-  cudaFree(d_Lx_csr);
-
-  cudaFree(d_Up_csr);
-  cudaFree(d_Ui_csr);
-  cudaFree(d_Ux_csr);
+  sp_status_ = cusolverRfRefactor(handle_rf_);
+  assert(CUSOLVER_STATUS_SUCCESS == sp_status_);
 
   return 0;
 }
