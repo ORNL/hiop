@@ -73,6 +73,7 @@
 #endif
 #ifdef HIOP_USE_RESOLVE
 #include "hiopLinSolverSparseReSolve.hpp"
+#include "hiopLinSolverSparseEVLOSER.hpp"
 #endif
 #ifdef HIOP_USE_GINKGO
 #include "hiopLinSolverSparseGinkgo.hpp"
@@ -428,7 +429,7 @@ bool hiopDualsLsqUpdateLinsysAugSparse::instantiate_linear_solver(const char* li
 
 #ifdef HIOP_USE_RESOLVE
       if(compute_mode == "gpu") {
-        assert((linear_solver == "resolve" || linear_solver == "auto") &&
+        assert((linear_solver == "resolve" || linear_solver == "evloser" || linear_solver == "auto") &&
                "the value for duals_init_linear_solver_sparse is invalid and should have been corrected during "
                "options processing");
       }
@@ -443,6 +444,10 @@ bool hiopDualsLsqUpdateLinsysAugSparse::instantiate_linear_solver(const char* li
       if(linear_solver == "resolve" || linear_solver == "auto") {
         ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: ReSolve ";
         lin_sys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
+      }
+      if(linear_solver == "evloser") {
+        ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: EVLOSER ";
+        lin_sys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
       }
 #else  // of #ifdef HIOP_USE_RESOLVE
        // under compute mode gpu, at this point we don't have a sparse linear solver
