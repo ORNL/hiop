@@ -1425,8 +1425,21 @@ void hiopOptionsNLP::ensure_consistence()
     }
   }
 
+// EVLOSER requires either CUDA or HIP support.
+#if !defined(HIOP_USE_CUDA) && !defined(HIOP_USE_HIP)
+  if(sol_sp == "evloser") {
+    if(is_user_defined("linear_solver_sparse")) {
+      log_printf(hovWarning,
+                 "The option 'linear_solver_sparse=%s' is not valid without CUDA or HIP support enabled."
+                 " Will use 'linear_solver_sparse=auto'.\n",
+                 GetString("linear_solver_sparse").c_str());
+    }
+    set_val("linear_solver_sparse", "auto");
+  }
+#endif  // !defined(HIOP_USE_CUDA) && !defined(HIOP_USE_HIP)
+
 #ifndef HIOP_USE_CUDA
-  if(sol_sp == "resolve" || sol_sp == "evloser" || sol_sp == "cusolver-chol") {
+  if(sol_sp == "resolve" || sol_sp == "cusolver-chol") {
     if(is_user_defined("linear_solver_sparse")) {
       log_printf(hovWarning,
                  "The option 'linear_solver_sparse=%s' is not valid without CUDA support enabled."
