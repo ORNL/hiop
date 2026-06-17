@@ -138,7 +138,7 @@ void RefactorizationSolver::enable_iterative_refinement()
 // TODO: Refactor to only pass mat_A_csr_ to setup_system_matrix; n and nnz can be read from mat_A_csr_
 void RefactorizationSolver::setup_iterative_refinement_matrix(int n, int nnz)
 {
-  ir_->setup_system_matrix(n, nnz, mat_A_csr_->get_irows(), mat_A_csr_->get_jcols(), mat_A_csr_->get_vals());
+  ir_->setup_system_matrix(n, nnz, mat_A_csr_->device_irows(), mat_A_csr_->device_jcols(), mat_A_csr_->device_vals());
 }
 
 // TODO: Can this function be merged with setup_iterative_refinement_matrix ?
@@ -216,8 +216,8 @@ int RefactorizationSolver::setup_factorization()
     return -1;
   }
 
-  int* row_ptr = mat_A_csr_->get_irows_host();
-  int* col_idx = mat_A_csr_->get_jcols_host();
+  int* row_ptr = mat_A_csr_->host_irows();
+  int* col_idx = mat_A_csr_->host_jcols();
 
   if(fact_ == "klu") {
     /* initialize KLU setup parameters, dont factorize yet */
@@ -239,9 +239,9 @@ int RefactorizationSolver::setup_factorization()
 
 int RefactorizationSolver::factorize()
 {
-  Numeric_ = klu_factor(mat_A_csr_->get_irows_host(),
-                        mat_A_csr_->get_jcols_host(),
-                        mat_A_csr_->get_vals_host(),
+  Numeric_ = klu_factor(mat_A_csr_->host_irows(),
+                        mat_A_csr_->host_jcols(),
+                        mat_A_csr_->host_vals(),
                         Symbolic_,
                         &Common_);
   return (Numeric_ == nullptr) ? -1 : 0;
@@ -279,18 +279,18 @@ int RefactorizationSolver::refactorize()
                                      /* A is original matrix */
                                      nnz_,
                                      descr_A_,
-                                     mat_A_csr_->get_vals(),
-                                     mat_A_csr_->get_irows(),
-                                     mat_A_csr_->get_jcols(),
+                                     mat_A_csr_->device_vals(),
+                                     mat_A_csr_->device_irows(),
+                                     mat_A_csr_->device_jcols(),
                                      info_M_);
     sp_status_ = cusolverSpDgluFactor(handle_cusolver_, info_M_, d_work_);
   } else {
     if(refact_ == "rf") {
       sp_status_ = cusolverRfResetValues(n_,
                                          nnz_,
-                                         mat_A_csr_->get_irows(),
-                                         mat_A_csr_->get_jcols(),
-                                         mat_A_csr_->get_vals(),
+                                         mat_A_csr_->device_irows(),
+                                         mat_A_csr_->device_jcols(),
+                                         mat_A_csr_->device_vals(),
                                          d_P_,
                                          d_Q_,
                                          handle_rf_);
@@ -317,9 +317,9 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
                                      /* A is original matrix */
                                      nnz_,
                                      descr_A_,
-                                     mat_A_csr_->get_vals(),
-                                     mat_A_csr_->get_irows(),
-                                     mat_A_csr_->get_jcols(),
+                                     mat_A_csr_->device_vals(),
+                                     mat_A_csr_->device_irows(),
+                                     mat_A_csr_->device_jcols(),
                                      devr_, /* right hand side */
                                      devx,  /* left hand side, local pointer */
                                      &ite_refine_succ_,
@@ -571,8 +571,8 @@ int RefactorizationSolver::refactorizationSetupCusolverGLU()
                                    n_,
                                    nnz_,
                                    descr_A_,
-                                   mat_A_csr_->get_irows_host(),  // kRowPtr_,
-                                   mat_A_csr_->get_jcols_host(),  // jCol_,
+                                   mat_A_csr_->host_irows(),  // kRowPtr_,
+                                   mat_A_csr_->host_jcols(),  // jCol_,
                                    Numeric_->Pnum,                /* base-0 */
                                    Symbolic_->Q,                  /* base-0 */
                                    nnzM,                          /* nnzM */
@@ -597,9 +597,9 @@ int RefactorizationSolver::refactorizationSetupCusolverGLU()
                                    /* A is original matrix */
                                    nnz_,
                                    descr_A_,
-                                   mat_A_csr_->get_vals(),
-                                   mat_A_csr_->get_irows(),
-                                   mat_A_csr_->get_jcols(),
+                                   mat_A_csr_->device_vals(),
+                                   mat_A_csr_->device_irows(),
+                                   mat_A_csr_->device_jcols(),
                                    info_M_);
 
   assert(CUSOLVER_STATUS_SUCCESS == sp_status_);
@@ -792,9 +792,9 @@ int RefactorizationSolver::refactorizationSetupCusolverRf()
 
   sp_status_ = cusolverRfSetupDevice(n_,
                                      nnz_,
-                                     mat_A_csr_->get_irows(),  // dia_,
-                                     mat_A_csr_->get_jcols(),  // dja_,
-                                     mat_A_csr_->get_vals(),   // da_,
+                                     mat_A_csr_->device_irows(),  // dia_,
+                                     mat_A_csr_->device_jcols(),  // dja_,
+                                     mat_A_csr_->device_vals(),   // da_,
                                      nnzL,
                                      d_Lp_csr,
                                      d_Li_csr,

@@ -72,13 +72,29 @@ MatrixCsr::MatrixCsr() {}
 
 MatrixCsr::~MatrixCsr()
 {
-  if(n_ == 0) return;
-
   clear_data();
+}
+
+bool MatrixCsr::has_device_storage() const
+{
+  const bool size_allocated = (n_ == 0) || (irows_ != nullptr);
+  const bool nnz_allocated = (nnz_ == 0) || (jcols_ != nullptr && vals_ != nullptr);
+  return size_allocated && nnz_allocated;
+}
+
+bool MatrixCsr::has_host_mirror() const
+{
+  const bool size_allocated = (n_ == 0) || (irows_host_ != nullptr);
+  const bool nnz_allocated = (nnz_ == 0) || (jcols_host_ != nullptr && vals_host_ != nullptr);
+  return size_allocated && nnz_allocated;
 }
 
 void MatrixCsr::allocate_size(int n)
 {
+  if(irows_ != nullptr || irows_host_ != nullptr) {
+    clear_data();
+  }
+
   n_ = n;
   checkCudaErrors(cudaMalloc(&irows_, (n_ + 1) * sizeof(int)));
   irows_host_ = new int[n_ + 1]{0};
@@ -86,7 +102,24 @@ void MatrixCsr::allocate_size(int n)
 
 void MatrixCsr::allocate_nnz(int nnz)
 {
+  if(jcols_ != nullptr || vals_ != nullptr || jcols_host_ != nullptr || vals_host_ != nullptr) {
+    checkCudaErrors(cudaFree(jcols_));
+    checkCudaErrors(cudaFree(vals_));
+    delete[] jcols_host_;
+    delete[] vals_host_;
+
+    jcols_ = nullptr;
+    vals_ = nullptr;
+    jcols_host_ = nullptr;
+    vals_host_ = nullptr;
+    nnz_ = 0;
+  }
+
   nnz_ = nnz;
+  if(nnz_ == 0) {
+    return;
+  }
+
   checkCudaErrors(cudaMalloc(&jcols_, nnz_ * sizeof(int)));
   checkCudaErrors(cudaMalloc(&vals_, nnz_ * sizeof(double)));
   jcols_host_ = new int[nnz_]{0};
@@ -117,16 +150,28 @@ void MatrixCsr::clear_data()
 
 void MatrixCsr::update_from_host_mirror()
 {
+  assert(has_device_storage());
+  assert(has_host_mirror());
+
   checkCudaErrors(cudaMemcpy(irows_, irows_host_, sizeof(int) * (n_ + 1), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(jcols_, jcols_host_, sizeof(int) * nnz_, cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(vals_, vals_host_, sizeof(double) * nnz_, cudaMemcpyHostToDevice));
+
+  if(nnz_ > 0) {
+    checkCudaErrors(cudaMemcpy(jcols_, jcols_host_, sizeof(int) * nnz_, cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(vals_, vals_host_, sizeof(double) * nnz_, cudaMemcpyHostToDevice));
+  }
 }
 
 void MatrixCsr::copy_to_host_mirror()
 {
+  assert(has_device_storage());
+  assert(has_host_mirror());
+
   checkCudaErrors(cudaMemcpy(irows_host_, irows_, sizeof(int) * (n_ + 1), cudaMemcpyDeviceToHost));
-  checkCudaErrors(cudaMemcpy(jcols_host_, jcols_, sizeof(int) * nnz_, cudaMemcpyDeviceToHost));
-  checkCudaErrors(cudaMemcpy(vals_host_, vals_, sizeof(double) * nnz_, cudaMemcpyDeviceToHost));
+
+  if(nnz_ > 0) {
+    checkCudaErrors(cudaMemcpy(jcols_host_, jcols_, sizeof(int) * nnz_, cudaMemcpyDeviceToHost));
+    checkCudaErrors(cudaMemcpy(vals_host_, vals_, sizeof(double) * nnz_, cudaMemcpyDeviceToHost));
+  }
 }
 
 bool MatrixCsr::validate_host_structure(const char* caller, bool silent_output) const

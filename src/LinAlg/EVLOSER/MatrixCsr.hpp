@@ -14,21 +14,33 @@ public:
 
   int n() const { return n_; }
   int nnz() const { return nnz_; }
+  bool has_device_storage() const;
+  bool has_host_mirror() const;
   bool validate_host_structure(const char* caller, bool silent_output) const;
 
-  int* get_irows() { return irows_; }
+  int* device_irows() { return irows_; }
 
-  const int* get_irows() const { return irows_; }
+  const int* device_irows() const { return irows_; }
 
-  int* get_jcols() { return jcols_; }
+  int* device_jcols() { return jcols_; }
 
-  double* get_vals() { return vals_; }
+  const int* device_jcols() const { return jcols_; }
 
-  int* get_irows_host() { return irows_host_; }
+  double* device_vals() { return vals_; }
 
-  int* get_jcols_host() { return jcols_host_; }
+  const double* device_vals() const { return vals_; }
 
-  double* get_vals_host() { return vals_host_; }
+  int* host_irows() { return irows_host_; }
+
+  const int* host_irows() const { return irows_host_; }
+
+  int* host_jcols() { return jcols_host_; }
+
+  const int* host_jcols() const { return jcols_host_; }
+
+  double* host_vals() { return vals_host_; }
+
+  const double* host_vals() const { return vals_host_; }
 
   void update_from_host_mirror();
   void copy_to_host_mirror();

@@ -375,7 +375,7 @@ void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 {
   std::string mem_space = nlp_->options->GetString("mem_space");
   if(mem_space == "device") {
-    double* csr_vals = solver_->mat_A_csr()->get_vals();
+    double* csr_vals = solver_->mat_A_csr()->device_vals();
     double* coo_vals = M_->M();
     int coo_nnz = M_->numberOfNonzeros();
 
@@ -389,14 +389,14 @@ void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 
     // If factorization was not successful, we need a copy of values on the host
     if(factorizationSetupSucc_ == 0)
-      checkCudaErrors(cudaMemcpy(solver_->mat_A_csr()->get_vals_host(),
-                                 solver_->mat_A_csr()->get_vals(),
+      checkCudaErrors(cudaMemcpy(solver_->mat_A_csr()->host_vals(),
+                                 solver_->mat_A_csr()->device_vals(),
                                  sizeof(double) * nnz_,
                                  cudaMemcpyDeviceToHost));
 
   } else {
     // KKT matrix is on the host
-    double* vals = solver_->mat_A_csr()->get_vals_host();
+    double* vals = solver_->mat_A_csr()->host_vals();
     // update matrix
     for(int k = 0; k < nnz_; k++) {
       vals[k] = M_->M()[index_convert_CSR2Triplet_host_[k]];
@@ -405,8 +405,8 @@ void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
       if(index_convert_extra_Diag2CSR_host_[i] != -1)
         vals[index_convert_extra_Diag2CSR_host_[i]] += M_->M()[M_->numberOfNonzeros() - n_ + i];
     }
-    checkCudaErrors(cudaMemcpy(solver_->mat_A_csr()->get_vals(),
-                               solver_->mat_A_csr()->get_vals_host(),
+    checkCudaErrors(cudaMemcpy(solver_->mat_A_csr()->device_vals(),
+                               solver_->mat_A_csr()->host_vals(),
                                sizeof(double) * nnz_,
                                cudaMemcpyHostToDevice));
   }
@@ -418,7 +418,7 @@ void hiopLinSolverSymSparseEVLOSER::compute_nnz()
   //
   // compute nnz in each row
   //
-  int* row_ptr = solver_->mat_A_csr()->get_irows_host();
+  int* row_ptr = solver_->mat_A_csr()->host_irows();
 
   // If the data is on device, fetch it from the host mirror
   hiopMatrixSparse* M_host = nullptr;
@@ -469,9 +469,9 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
   //
   // set correct col index and value
   //
-  const int* row_ptr = solver_->mat_A_csr()->get_irows_host();
-  int* col_idx = solver_->mat_A_csr()->get_jcols_host();
-  double* vals = solver_->mat_A_csr()->get_vals_host();
+  const int* row_ptr = solver_->mat_A_csr()->host_irows();
+  int* col_idx = solver_->mat_A_csr()->host_jcols();
+  double* vals = solver_->mat_A_csr()->host_vals();
 
   index_convert_CSR2Triplet_host_ = new int[nnz_];
   index_convert_extra_Diag2CSR_host_ = new int[n_];
