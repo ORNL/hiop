@@ -57,7 +57,7 @@
 #pragma once
 
 #include "klu.h"
-#include "evloser_cusolver_defs.hpp"
+#include "evloser_gpu_defs.hpp"
 #include <string>
 
 namespace EVLOSER
@@ -67,7 +67,7 @@ class MatrixCsr;
 class IterativeRefinement;
 
 /**
- * @brief Implements refactorization solvers using KLU and cuSOLVER libraries
+ * @brief Implements refactorization solvers using KLU and GPU sparse solver libraries
  *
  */
 class RefactorizationSolver
@@ -91,7 +91,7 @@ public:
   void setup_iterative_refinement_matrix(int n, int nnz);
   void configure_iterative_refinement(cusparseHandle_t cusparse_handle,
                                       cublasHandle_t cublas_handle,
-                                      cusolverRfHandle_t cusolverrf_handle,
+                                      evloserRfHandle_t cusolverrf_handle,
                                       int n,
                                       double* d_T,
                                       int* d_P,
@@ -165,8 +165,8 @@ private:
   MatrixCsr* mat_A_csr_{nullptr};     ///< System matrix in nonsymmetric CSR format
   IterativeRefinement* ir_{nullptr};  ///< Iterative refinement class
 
-  bool cusolver_glu_enabled_{false};          ///< cusolverGLU on/off flag
-  bool cusolver_rf_enabled_{false};           ///< cusolverRf on/off flag
+  bool cusolver_glu_enabled_{false};          ///< GLU refactorization enabled flag
+  bool cusolver_rf_enabled_{false};           ///< Rf refactorization enabled flag
   bool iterative_refinement_enabled_{false};  ///< Iterative refinement on/off flag
   bool is_first_solve_{true};                 ///< If it is first call to triangular solver
 
@@ -177,7 +177,7 @@ private:
   std::string use_ir_;
   bool silent_output_{true};
 
-  /** needed for cuSolver **/
+  /** needed for GPU sparse solver **/
 
   cusolverStatus_t sp_status_;
   cusparseHandle_t handle_ = 0;
@@ -189,12 +189,12 @@ private:
   csrluInfoHost_t info_lu_ = nullptr;
   csrgluInfo_t info_M_ = nullptr;
 
-  cusolverRfHandle_t handle_rf_ = nullptr;
-  size_t buffer_size_;
-  size_t size_M_;
-  double* d_work_;
+  evloserRfHandle_t handle_rf_ = nullptr;
+  size_t buffer_size_{0};
+  size_t size_M_{0};
+  double* d_work_{nullptr};
   int ite_refine_succ_ = 0;
-  double r_nrminf_;
+  double r_nrminf_{0.0};
 
   // KLU stuff
   int klu_status_;
@@ -212,7 +212,7 @@ private:
   double* devx_ = nullptr;
   double* devr_ = nullptr;
 
-  /* needed for cuSolverRf */
+  /* needed for GPU Rf */
   int* d_P_ = nullptr;
   int* d_Q_ = nullptr;  // permutation matrices
   double* d_T_ = nullptr;
@@ -244,28 +244,28 @@ private:
   int refactorizationSetupCusolverGLU();
   int refactorizationSetupCusolverRf();
 
-  /// Check and report a cuSOLVER RF status value.
-  bool checkCusolverRfStatus(cusolverStatus_t status, const char* caller) const;
+  /// Check and report a GPU RF status value.
+  bool checkEvloserRfStatus(evloserRfStatus_t status, const char* caller) const;
 
-  /// Reset cuSOLVER RF values using the current device CSR matrix.
-  int resetCusolverRfValues(const char* caller);
+  /// Reset GPU RF values using the current device CSR matrix.
+  int resetEvloserRfValues(const char* caller);
 
-  /// Run cuSOLVER RF analysis on the configured RF handle.
-  int analyzeCusolverRf(const char* caller);
+  /// Run GPU RF analysis on the configured RF handle.
+  int analyzeEvloserRf(const char* caller);
 
-  /// Run cuSOLVER RF numeric refactorization on the configured RF handle.
-  int refactorizeCusolverRf(const char* caller);
+  /// Run GPU RF numeric refactorization on the configured RF handle.
+  int refactorizeEvloserRf(const char* caller);
 
   /**
-   * @brief Check for CUDA errors.
+   * @brief Check for GPU backend errors.
    *
    * @tparam T - type of the result
    * @param result - result value
-   * @param file   - file name where the error occured
-   * @param line   - line at which the error occured
+   * @param file   - file name where the error occurred
+   * @param line   - line at which the error occurred
    */
   template<typename T>
-  void evloserCheckCudaError(T result, const char* const file, int const line);
+  void evloserCheckGpuError(T result, const char* const file, int const line);
 };
 
 }  // namespace EVLOSER

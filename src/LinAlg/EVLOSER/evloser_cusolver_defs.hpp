@@ -97,6 +97,125 @@ inline const char* evloserGpuGetErrorString(evloserGpuError_t status)
 
 #include "cusolverRf.h"
 
+using evloserRfStatus_t = cusolverStatus_t;
+using evloserRfHandle_t = cusolverRfHandle_t;
+using evloserRfFactorization_t = cusolverRfFactorization_t;
+using evloserRfTriangularSolve_t = cusolverRfTriangularSolve_t;
+using evloserRfMatrixFormat_t = cusolverRfMatrixFormat_t;
+using evloserRfUnitDiagonal_t = cusolverRfUnitDiagonal_t;
+using evloserRfResetValuesFastMode_t = cusolverRfResetValuesFastMode_t;
+
+static const evloserRfStatus_t evloserRfSuccess = CUSOLVER_STATUS_SUCCESS;
+static const evloserRfFactorization_t evloserRfFactorizationAlg2 = CUSOLVERRF_FACTORIZATION_ALG2;
+static const evloserRfTriangularSolve_t evloserRfTriangularSolveAlg2 = CUSOLVERRF_TRIANGULAR_SOLVE_ALG2;
+static const evloserRfMatrixFormat_t evloserRfMatrixFormatCsr = CUSOLVERRF_MATRIX_FORMAT_CSR;
+static const evloserRfUnitDiagonal_t evloserRfUnitDiagonalStoredL = CUSOLVERRF_UNIT_DIAGONAL_STORED_L;
+static const evloserRfResetValuesFastMode_t evloserRfResetValuesFastModeOn = CUSOLVERRF_RESET_VALUES_FAST_MODE_ON;
+
+inline evloserRfStatus_t evloserRfCreate(evloserRfHandle_t* handle)
+{
+  return cusolverRfCreate(handle);
+}
+
+inline evloserRfStatus_t evloserRfDestroy(evloserRfHandle_t handle)
+{
+  return cusolverRfDestroy(handle);
+}
+
+inline evloserRfStatus_t evloserRfSetAlgs(evloserRfHandle_t handle,
+                                          evloserRfFactorization_t fact_alg,
+                                          evloserRfTriangularSolve_t solve_alg)
+{
+  return cusolverRfSetAlgs(handle, fact_alg, solve_alg);
+}
+
+inline evloserRfStatus_t evloserRfSetMatrixFormat(evloserRfHandle_t handle,
+                                                  evloserRfMatrixFormat_t format,
+                                                  evloserRfUnitDiagonal_t diag)
+{
+  return cusolverRfSetMatrixFormat(handle, format, diag);
+}
+
+inline evloserRfStatus_t evloserRfSetResetValuesFastMode(evloserRfHandle_t handle,
+                                                         evloserRfResetValuesFastMode_t fast_mode)
+{
+  return cusolverRfSetResetValuesFastMode(handle, fast_mode);
+}
+
+inline evloserRfStatus_t evloserRfSetNumericProperties(evloserRfHandle_t handle, double zero, double boost)
+{
+  return cusolverRfSetNumericProperties(handle, zero, boost);
+}
+
+inline evloserRfStatus_t evloserRfSetupHost(int n,
+                                            int nnzA,
+                                            int* csrRowPtrA,
+                                            int* csrColIndA,
+                                            double* csrValA,
+                                            int nnzL,
+                                            int* csrRowPtrL,
+                                            int* csrColIndL,
+                                            double* csrValL,
+                                            int nnzU,
+                                            int* csrRowPtrU,
+                                            int* csrColIndU,
+                                            double* csrValU,
+                                            int* P,
+                                            int* Q,
+                                            evloserRfHandle_t handle)
+{
+  return cusolverRfSetupHost(n,
+                             nnzA,
+                             csrRowPtrA,
+                             csrColIndA,
+                             csrValA,
+                             nnzL,
+                             csrRowPtrL,
+                             csrColIndL,
+                             csrValL,
+                             nnzU,
+                             csrRowPtrU,
+                             csrColIndU,
+                             csrValU,
+                             P,
+                             Q,
+                             handle);
+}
+
+inline evloserRfStatus_t evloserRfResetValues(int n,
+                                              int nnzA,
+                                              int* csrRowPtrA,
+                                              int* csrColIndA,
+                                              double* csrValA,
+                                              int* P,
+                                              int* Q,
+                                              evloserRfHandle_t handle)
+{
+  return cusolverRfResetValues(n, nnzA, csrRowPtrA, csrColIndA, csrValA, P, Q, handle);
+}
+
+inline evloserRfStatus_t evloserRfAnalyze(evloserRfHandle_t handle)
+{
+  return cusolverRfAnalyze(handle);
+}
+
+inline evloserRfStatus_t evloserRfRefactor(evloserRfHandle_t handle)
+{
+  return cusolverRfRefactor(handle);
+}
+
+inline evloserRfStatus_t evloserRfSolve(evloserRfHandle_t handle,
+                                        int* P,
+                                        int* Q,
+                                        int nrhs,
+                                        double* Temp,
+                                        int ldt,
+                                        double* XF,
+                                        int ldxf)
+{
+  return cusolverRfSolve(handle, P, Q, nrhs, Temp, ldt, XF, ldxf);
+}
+
 extern "C" {
 /*
  * prototype not in public header file

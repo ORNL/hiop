@@ -3,14 +3,27 @@
 set(EVLOSER_SRC
   RefactorizationSolver.cpp
   MatrixCsr.cpp
-  IterativeRefinement.cpp
-  KrylovSolverKernels.cu
 )
-set_source_files_properties(${EVLOSER_SRC} PROPERTIES LANGUAGE CUDA)
+
+if(HIOP_USE_CUDA)
+  list(APPEND EVLOSER_SRC
+    IterativeRefinement.cpp
+    KrylovSolverKernels.cu
+  )
+  set_source_files_properties(${EVLOSER_SRC} PROPERTIES LANGUAGE CUDA)
+endif()
 
 add_library(EVLOSER STATIC ${EVLOSER_SRC})
 target_include_directories(EVLOSER INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
 )
-target_link_libraries(EVLOSER PRIVATE KLU hiop_cuda)
+target_link_libraries(EVLOSER PRIVATE KLU)
+
+if(HIOP_USE_CUDA)
+  target_link_libraries(EVLOSER PRIVATE hiop_cuda)
+endif()
+
+if(HIOP_USE_HIP)
+  target_link_libraries(EVLOSER PRIVATE hipsparse hipsolver hipblas)
+endif()

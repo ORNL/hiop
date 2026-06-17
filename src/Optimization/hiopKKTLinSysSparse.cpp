@@ -58,7 +58,9 @@
 #include "hiopLinSolverSparsePARDISO.hpp"
 #endif
 #ifdef HIOP_USE_RESOLVE
+#if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
 #include "hiopLinSolverSparseReSolve.hpp"
+#endif
 #include "hiopLinSolverSparseEVLOSER.hpp"
 #endif
 #ifdef HIOP_USE_GINKGO
@@ -364,7 +366,9 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXYcYd::determineAndCreateLi
 
       if((nullptr == linSys_ && linear_solver == "auto") || linear_solver == "resolve") {
 #if defined(HIOP_USE_RESOLVE)
+#if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
         linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
+#endif
         linsol_actual = "ReSolve";
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
         if(fact_acceptor_ic) {
@@ -761,7 +765,9 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
       if(linear_solver == "resolve" || linear_solver == "auto") {
 #if defined(HIOP_USE_RESOLVE)
         actual_lin_solver = "ReSolve";
+#if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
         linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
+#endif
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
         if(fact_acceptor_ic) {
           nlp_->log->printf(hovError,
@@ -847,7 +853,9 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
 
       if(linear_solver == "resolve" || linear_solver == "auto") {
 #if defined(HIOP_USE_RESOLVE)
+#if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
         linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
+#endif
         nlp_->log->printf(hovScalars, "KKT_SPARSE_XDYcYd linsys: alloc ReSolve size %d (%d cons) (gpu)\n", n, neq + nineq);
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
         if(fact_acceptor_ic) {

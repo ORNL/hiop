@@ -72,7 +72,9 @@
 #include "hiopLinSolverSparsePARDISO.hpp"
 #endif
 #ifdef HIOP_USE_RESOLVE
+#if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
 #include "hiopLinSolverSparseReSolve.hpp"
+#endif
 #include "hiopLinSolverSparseEVLOSER.hpp"
 #endif
 #ifdef HIOP_USE_GINKGO
@@ -443,7 +445,9 @@ bool hiopDualsLsqUpdateLinsysAugSparse::instantiate_linear_solver(const char* li
       // This is our first choice on the device.
       if(linear_solver == "resolve" || linear_solver == "auto") {
         ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: ReSolve ";
+#if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
         lin_sys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
+#endif
       }
       if(linear_solver == "evloser") {
         ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: EVLOSER ";

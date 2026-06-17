@@ -17,15 +17,17 @@ target_link_libraries(NlpSparseEx3.exe HiOp::HiOp)
 add_executable(NlpSparseEx4.exe NlpSparseEx4.cpp NlpSparseEx4Driver.cpp)
 target_link_libraries(NlpSparseEx4.exe HiOp::HiOp)
 
-if(HIOP_USE_RAJA)
-  if(HIOP_USE_GPU AND HIOP_USE_CUDA AND HIOP_USE_RESOLVE)
-    set_source_files_properties(
-      NlpSparseRajaEx2.cpp 
-      NlpSparseRajaEx2Driver.cpp 
-      PROPERTIES LANGUAGE CUDA
-    )
-  
-    add_executable(NlpSparseRajaEx2.exe  NlpSparseRajaEx2Driver.cpp  NlpSparseRajaEx2.cpp)
+if(HIOP_USE_RAJA AND HIOP_USE_GPU AND HIOP_USE_RESOLVE)
+  if(HIOP_USE_CUDA OR HIOP_USE_HIP)
+    if(HIOP_USE_CUDA)
+      set_source_files_properties(
+        NlpSparseRajaEx2.cpp
+        NlpSparseRajaEx2Driver.cpp
+        PROPERTIES LANGUAGE CUDA
+      )
+    endif()
+
+    add_executable(NlpSparseRajaEx2.exe NlpSparseRajaEx2Driver.cpp NlpSparseRajaEx2.cpp)
     target_link_libraries(NlpSparseRajaEx2.exe HiOp::HiOp)
     install(TARGETS NlpSparseRajaEx2.exe DESTINATION bin)
     list(APPEND hiopSparseEx_INTERFACE_HEADERS NlpSparseRajaEx2.hpp)

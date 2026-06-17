@@ -97,7 +97,7 @@ cmake_dependent_option(
   HIOP_USE_MAGMA "Use Magma linear algebra" ON "HIOP_USE_GPU" OFF
 )
 cmake_dependent_option(
-  HIOP_USE_RESOLVE "Build with cuSolver LU support" ON "HIOP_USE_CUDA" OFF
+  HIOP_USE_RESOLVE "Build with ReSolve/EVLOSER sparse solver support" ON "HIOP_USE_GPU" OFF
 )
 
 add_library(hiop_tpl INTERFACE)
@@ -286,6 +286,8 @@ endif(HIOP_USE_GPU)
 
 if(HIOP_USE_RAJA)
   # Look for CMake configuration file in RAJA installation
+  find_package(camp CONFIG REQUIRED)
+
   find_package(RAJA CONFIG
     PATHS ${RAJA_DIR} ${RAJA_DIR}/share/raja/cmake
     REQUIRED)
@@ -293,7 +295,7 @@ if(HIOP_USE_RAJA)
   find_package(umpire CONFIG
     PATHS ${umpire_DIR} ${umpire_DIR}/share/umpire/cmake
     REQUIRED)
-  target_link_libraries(hiop_tpl INTERFACE umpire RAJA)
+  target_link_libraries(hiop_tpl INTERFACE umpire RAJA camp)
   message(STATUS "Found RAJA pkg-config: ${RAJA_CONFIG}")
   message(STATUS "Found umpire pkg-config: ${umpire_CONFIG}")
 endif()

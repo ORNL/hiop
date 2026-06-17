@@ -27,7 +27,7 @@ static bool parse_arguments(int argc,
   use_evloser = false;
   use_ginkgo = false;
   use_ginkgo_cuda = false;
-  use_ginkgo_cuda = false;
+  use_ginkgo_hip = false;
   force_fr = false;
   n = 3;
   scal = 1.0;

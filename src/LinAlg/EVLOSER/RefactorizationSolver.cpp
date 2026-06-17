@@ -58,13 +58,13 @@
 #include "RefactorizationSolver.hpp"
 
 #include "klu.h"
-#include "cusparse_v2.h"
+#include <cassert>
 #include <sstream>
 #include <string>
 #include <vector>
 #include <iostream>
 
-#define checkCudaErrors(val) evloserCheckCudaError((val), __FILE__, __LINE__)
+#define checkGpuErrors(val) evloserCheckGpuError((val), __FILE__, __LINE__)
 
 namespace EVLOSER
 {
@@ -279,17 +279,19 @@ RefactorizationSolver::RefactorizationSolver(int n)
   hostx_ = new double[n_];
 
   // Allocate solution and rhs vectors
-  checkCudaErrors(cudaMalloc(&devx_, n_ * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&devr_, n_ * sizeof(double)));
+  checkGpuErrors(evloserGpuMalloc((void**)&devx_, n_ * sizeof(double)));
+  checkGpuErrors(evloserGpuMalloc((void**)&devr_, n_ * sizeof(double)));
 }
 
 RefactorizationSolver::~RefactorizationSolver()
 {
-  if(iterative_refinement_enabled_) delete ir_;
+  delete ir_;
   delete mat_A_csr_;
 
   // Delete workspaces and handles
-  cudaFree(d_work_);
+  if(d_work_ != nullptr) {
+    (void)evloserGpuFree(d_work_);
+  }
   cusparseDestroy(handle_);
   cusolverSpDestroy(handle_cusolver_);
   cublasDestroy(handle_cublas_);
@@ -299,8 +301,12 @@ RefactorizationSolver::~RefactorizationSolver()
   delete[] hostx_;
 
   // Delete residual and solution vectors
-  cudaFree(devr_);
-  cudaFree(devx_);
+  if(devr_ != nullptr) {
+    (void)evloserGpuFree(devr_);
+  }
+  if(devx_ != nullptr) {
+    (void)evloserGpuFree(devx_);
+  }
 
   // Delete matrix descriptor used in cuSolverGLU setup
   if(cusolver_glu_enabled_) {
@@ -309,9 +315,15 @@ RefactorizationSolver::~RefactorizationSolver()
   }
 
   if(cusolver_rf_enabled_) {
-    cudaFree(d_P_);
-    cudaFree(d_Q_);
-    cudaFree(d_T_);
+    if(d_P_ != nullptr) {
+      (void)evloserGpuFree(d_P_);
+    }
+    if(d_Q_ != nullptr) {
+      (void)evloserGpuFree(d_Q_);
+    }
+    if(d_T_ != nullptr) {
+      (void)evloserGpuFree(d_T_);
+    }
   }
 
   klu_free_symbolic(&Symbolic_, &Common_);
@@ -355,7 +367,7 @@ void RefactorizationSolver::setup_iterative_refinement_matrix(int n, int nnz)
 // TODO: Can this function be merged with setup_iterative_refinement_matrix ?
 void RefactorizationSolver::configure_iterative_refinement(cusparseHandle_t cusparse_handle,
                                                            cublasHandle_t cublas_handle,
-                                                           cusolverRfHandle_t cusolverrf_handle,
+                                                           evloserRfHandle_t cusolverrf_handle,
                                                            int n,
                                                            double* d_T,
                                                            int* d_P,
@@ -425,22 +437,22 @@ bool RefactorizationSolver::validate_klu_factorization(const char* caller) const
   return true;
 }
 
-bool RefactorizationSolver::checkCusolverRfStatus(cusolverStatus_t status, const char* caller) const
+bool RefactorizationSolver::checkEvloserRfStatus(evloserRfStatus_t status, const char* caller) const
 {
-  if(status == CUSOLVER_STATUS_SUCCESS) {
+  if(status == evloserRfSuccess) {
     return true;
   }
 
   if(!silent_output_) {
-    std::cout << "[EVLOSER] " << caller << " failed with cuSOLVER status " << status << "\n";
+    std::cout << "[EVLOSER] " << caller << " failed with GPU RF status " << status << "\n";
   }
 
   return false;
 }
 
-int RefactorizationSolver::resetCusolverRfValues(const char* caller)
+int RefactorizationSolver::resetEvloserRfValues(const char* caller)
 {
-  sp_status_ = cusolverRfResetValues(n_,
+  sp_status_ = evloserRfResetValues(n_,
                                      nnz_,
                                      mat_A_csr_->device_irows(),
                                      mat_A_csr_->device_jcols(),
@@ -449,24 +461,24 @@ int RefactorizationSolver::resetCusolverRfValues(const char* caller)
                                      d_Q_,
                                      handle_rf_);
 
-  if(!checkCusolverRfStatus(sp_status_, caller)) {
+  if(!checkEvloserRfStatus(sp_status_, caller)) {
     return -1;
   }
 
-  checkCudaErrors(cudaDeviceSynchronize());
+  checkGpuErrors(evloserGpuDeviceSynchronize());
   return 0;
 }
 
-int RefactorizationSolver::analyzeCusolverRf(const char* caller)
+int RefactorizationSolver::analyzeEvloserRf(const char* caller)
 {
-  sp_status_ = cusolverRfAnalyze(handle_rf_);
-  return checkCusolverRfStatus(sp_status_, caller) ? 0 : -1;
+  sp_status_ = evloserRfAnalyze(handle_rf_);
+  return checkEvloserRfStatus(sp_status_, caller) ? 0 : -1;
 }
 
-int RefactorizationSolver::refactorizeCusolverRf(const char* caller)
+int RefactorizationSolver::refactorizeEvloserRf(const char* caller)
 {
-  sp_status_ = cusolverRfRefactor(handle_rf_);
-  return checkCusolverRfStatus(sp_status_, caller) ? 0 : -1;
+  sp_status_ = evloserRfRefactor(handle_rf_);
+  return checkEvloserRfStatus(sp_status_, caller) ? 0 : -1;
 }
 
 int RefactorizationSolver::setup_factorization()
@@ -513,11 +525,16 @@ void RefactorizationSolver::setup_refactorization()
   }
 
   if(refact_ == "glu") {
-    initializeCusolverGLU();
-    refactorizationSetupCusolverGLU();
+    if(initializeCusolverGLU() != 0) {
+      return;
+    }
+
+    if(refactorizationSetupCusolverGLU() != 0) {
+      return;
+    }
   } else if(refact_ == "rf") {
     if(initializeCusolverRf() != 0 || refactorizationSetupCusolverRf() != 0) {
-      assert(false && "cuSOLVER RF setup failed.");
+      assert(false && "EVLOSER RF setup failed.");
       return;
     }
     if(iterative_refinement_active()) {
@@ -547,10 +564,10 @@ int RefactorizationSolver::refactorize()
     sp_status_ = cusolverSpDgluFactor(handle_cusolver_, info_M_, d_work_);
   } else {
     if(refact_ == "rf") {
-      if(resetCusolverRfValues("cuSOLVER RF reset values") != 0) {
+      if(resetEvloserRfValues("GPU RF reset values") != 0) {
         return -1;
       }
-      if(refactorizeCusolverRf("cuSOLVER RF refactorization") != 0) {
+      if(refactorizeEvloserRf("GPU RF refactorization") != 0) {
         return -1;
       }
     }
@@ -563,10 +580,10 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
   if(refact_ == "glu") {
     double* devx = nullptr;
     if(memspace == "device") {
-      checkCudaErrors(cudaMemcpy(devr_, dx, sizeof(double) * n_, cudaMemcpyDeviceToDevice));
+      checkGpuErrors(evloserGpuMemcpy(devr_, dx, sizeof(double) * n_, evloserMemcpyDeviceToDevice));
       devx = dx;
     } else {
-      checkCudaErrors(cudaMemcpy(devr_, dx, sizeof(double) * n_, cudaMemcpyHostToDevice));
+      checkGpuErrors(evloserGpuMemcpy(devr_, dx, sizeof(double) * n_, evloserMemcpyHostToDevice));
       devx = devx_;
     }
     sp_status_ = cusolverSpDgluSolve(handle_cusolver_,
@@ -590,7 +607,7 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
     if(memspace == "device") {
       // do nothing
     } else {
-      checkCudaErrors(cudaMemcpy(dx, devx_, sizeof(double) * n_, cudaMemcpyDeviceToHost));
+      checkGpuErrors(evloserGpuMemcpy(dx, devx_, sizeof(double) * n_, evloserMemcpyDeviceToHost));
     }
     return true;
   }
@@ -600,7 +617,7 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
     if(is_first_solve_) {
       double* hostx = nullptr;
       if(memspace == "device") {
-        checkCudaErrors(cudaMemcpy(hostx_, dx, sizeof(double) * n_, cudaMemcpyDeviceToHost));
+        checkGpuErrors(evloserGpuMemcpy(hostx_, dx, sizeof(double) * n_, evloserMemcpyDeviceToHost));
         hostx = hostx_;
       } else {
         hostx = dx;
@@ -610,7 +627,7 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
       klu_free_symbolic(&Symbolic_, &Common_);
       is_first_solve_ = false;
       if(memspace == "device") {
-        checkCudaErrors(cudaMemcpy(dx, hostx, sizeof(double) * n_, cudaMemcpyHostToDevice));
+        checkGpuErrors(evloserGpuMemcpy(dx, hostx, sizeof(double) * n_, evloserMemcpyHostToDevice));
       } else {
         // do nothing
       }
@@ -620,15 +637,15 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
     double* devx = nullptr;
     if(memspace == "device") {
       devx = dx;
-      checkCudaErrors(cudaMemcpy(devr_, dx, sizeof(double) * n_, cudaMemcpyDeviceToDevice));
+      checkGpuErrors(evloserGpuMemcpy(devr_, dx, sizeof(double) * n_, evloserMemcpyDeviceToDevice));
     } else {
-      checkCudaErrors(cudaMemcpy(devx_, dx, sizeof(double) * n_, cudaMemcpyHostToDevice));
-      checkCudaErrors(cudaMemcpy(devr_, devx_, sizeof(double) * n_, cudaMemcpyDeviceToDevice));
+      checkGpuErrors(evloserGpuMemcpy(devx_, dx, sizeof(double) * n_, evloserMemcpyHostToDevice));
+      checkGpuErrors(evloserGpuMemcpy(devr_, devx_, sizeof(double) * n_, evloserMemcpyDeviceToDevice));
       devx = devx_;
     }
 
     // Each next solve is performed on GPU
-    sp_status_ = cusolverRfSolve(handle_rf_,
+    sp_status_ = evloserRfSolve(handle_rf_,
                                  d_P_,
                                  d_Q_,
                                  1,
@@ -658,7 +675,7 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
     if(memspace == "device") {
       // do nothing
     } else {
-      checkCudaErrors(cudaMemcpy(dx, devx_, sizeof(double) * n_, cudaMemcpyDeviceToHost));
+      checkGpuErrors(evloserGpuMemcpy(dx, devx_, sizeof(double) * n_, evloserMemcpyDeviceToHost));
     }
     return true;
   }
@@ -738,6 +755,11 @@ int RefactorizationSolver::initializeKLU()
 
 int RefactorizationSolver::initializeCusolverGLU()
 {
+#if defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+  std::cerr << "EVLOSER GLU refactorization is not supported on HIP. Use RF instead.\n";
+  return -1;
+#endif
+
   cusparseCreateMatDescr(&descr_M_);
   cusparseSetMatType(descr_M_, CUSPARSE_MATRIX_TYPE_GENERAL);
   cusparseSetMatIndexBase(descr_M_, CUSPARSE_INDEX_BASE_ZERO);
@@ -753,32 +775,39 @@ int RefactorizationSolver::initializeCusolverGLU()
 
 int RefactorizationSolver::initializeCusolverRf()
 {
-  if(!checkCusolverRfStatus(cusolverRfCreate(&handle_rf_), "cusolverRfCreate")) {
+  if(!checkEvloserRfStatus(evloserRfCreate(&handle_rf_), "evloserRfCreate")) {
     return -1;
   }
 
-  sp_status_ = cusolverRfSetAlgs(handle_rf_, CUSOLVERRF_FACTORIZATION_ALG2, CUSOLVERRF_TRIANGULAR_SOLVE_ALG2);
-  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetAlgs")) {
+#if defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+  /*
+   * hipSOLVER RF uses the default RF settings. Some CUDA RF tuning calls are
+   * not portable to HIP.
+   */
+#else
+  sp_status_ = evloserRfSetAlgs(handle_rf_, evloserRfFactorizationAlg2, evloserRfTriangularSolveAlg2);
+  if(!checkEvloserRfStatus(sp_status_, "evloserRfSetAlgs")) {
     return -1;
   }
 
-  sp_status_ = cusolverRfSetMatrixFormat(handle_rf_, CUSOLVERRF_MATRIX_FORMAT_CSR, CUSOLVERRF_UNIT_DIAGONAL_STORED_L);
-  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetMatrixFormat")) {
+  sp_status_ = evloserRfSetMatrixFormat(handle_rf_, evloserRfMatrixFormatCsr, evloserRfUnitDiagonalStoredL);
+  if(!checkEvloserRfStatus(sp_status_, "evloserRfSetMatrixFormat")) {
     return -1;
   }
 
-  sp_status_ = cusolverRfSetResetValuesFastMode(handle_rf_, CUSOLVERRF_RESET_VALUES_FAST_MODE_ON);
-  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetResetValuesFastMode")) {
+  sp_status_ = evloserRfSetResetValuesFastMode(handle_rf_, evloserRfResetValuesFastModeOn);
+  if(!checkEvloserRfStatus(sp_status_, "evloserRfSetResetValuesFastMode")) {
     return -1;
   }
 
   const double boost = 1e-12;
   const double zero = 1e-14;
 
-  sp_status_ = cusolverRfSetNumericProperties(handle_rf_, zero, boost);
-  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetNumericProperties")) {
+  sp_status_ = evloserRfSetNumericProperties(handle_rf_, zero, boost);
+  if(!checkEvloserRfStatus(sp_status_, "evloserRfSetNumericProperties")) {
     return -1;
   }
+#endif
 
   cusolver_rf_enabled_ = true;
   return 0;
@@ -788,6 +817,11 @@ int RefactorizationSolver::initializeCusolverRf()
 // poor while using refactorization.
 int RefactorizationSolver::refactorizationSetupCusolverGLU()
 {
+#if defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+  std::cerr << "EVLOSER GLU refactorization is not supported on HIP. Use RF instead.\n";
+  return -1;
+#endif
+
   // for now this ONLY WORKS if proceeded by KLU. Might be worth decoupling
   // later
 
@@ -856,7 +890,7 @@ int RefactorizationSolver::refactorizationSetupCusolverGLU()
   assert(CUSOLVER_STATUS_SUCCESS == sp_status_);
 
   buffer_size_ = size_M_;
-  checkCudaErrors(cudaMalloc((void**)&d_work_, buffer_size_));
+  checkGpuErrors(evloserGpuMalloc((void**)&d_work_, buffer_size_));
 
   sp_status_ = cusolverSpDgluAnalysis(handle_cusolver_, info_M_, d_work_);
   assert(CUSOLVER_STATUS_SUCCESS == sp_status_);
@@ -901,14 +935,14 @@ int RefactorizationSolver::refactorizationSetupCusolverRf()
     return -1;
   }
 
-  checkCudaErrors(cudaMalloc(&d_P_, n_ * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_Q_, n_ * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&d_T_, n_ * sizeof(double)));
+  checkGpuErrors(evloserGpuMalloc(&d_P_, n_ * sizeof(int)));
+  checkGpuErrors(evloserGpuMalloc(&d_Q_, n_ * sizeof(int)));
+  checkGpuErrors(evloserGpuMalloc(&d_T_, n_ * sizeof(double)));
 
-  checkCudaErrors(cudaMemcpy(d_P_, Numeric_->Pnum, n_ * sizeof(int), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_Q_, Symbolic_->Q, n_ * sizeof(int), cudaMemcpyHostToDevice));
+  checkGpuErrors(evloserGpuMemcpy(d_P_, Numeric_->Pnum, n_ * sizeof(int), evloserMemcpyHostToDevice));
+  checkGpuErrors(evloserGpuMemcpy(d_Q_, Symbolic_->Q, n_ * sizeof(int), evloserMemcpyHostToDevice));
 
-  sp_status_ = cusolverRfSetupHost(n_,
+  sp_status_ = evloserRfSetupHost(n_,
                                    nnz_,
                                    mat_A_csr_->host_irows(),
                                    mat_A_csr_->host_jcols(),
@@ -924,24 +958,26 @@ int RefactorizationSolver::refactorizationSetupCusolverRf()
                                    Numeric_->Pnum,
                                    Symbolic_->Q,
                                    handle_rf_);
-  if(!checkCusolverRfStatus(sp_status_, "cusolverRfSetupHost")) {
+  if(!checkEvloserRfStatus(sp_status_, "evloserRfSetupHost")) {
     return -1;
   }
 
-  if(analyzeCusolverRf("cuSOLVER RF analysis") != 0) {
+  if(analyzeEvloserRf("GPU RF analysis") != 0) {
     return -1;
   }
 
-  return refactorizeCusolverRf("cuSOLVER RF initial refactorization");
+  return refactorizeEvloserRf("GPU RF initial refactorization");
 }
 
-// Error checking utility for CUDA
+// Error checking utility for GPU backend calls
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>
-void RefactorizationSolver::evloserCheckCudaError(T result, const char* const file, int const line)
+void RefactorizationSolver::evloserCheckGpuError(T result, const char* const file, int const line)
 {
-  if(result) {
-    fprintf(stdout, "CUDA error at %s:%d, error# %d\n", file, line, result);
+  if(result != evloserGpuSuccess) {
+    std::cout << "GPU backend error at " << file << ":" << line
+              << ", error# " << static_cast<int>(result)
+              << ": " << evloserGpuGetErrorString(result) << "\n";
     assert(false);
   }
 }

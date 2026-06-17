@@ -9,7 +9,7 @@
 #pragma once
 
 #include "klu.h"
-#include "evloser_cusolver_defs.hpp"
+#include "evloser_gpu_defs.hpp"
 #include <string>
 
 namespace EVLOSER
@@ -18,6 +18,70 @@ namespace EVLOSER
 constexpr double ZERO = 0.0;
 constexpr double EPSILON = 1.0e-18;
 constexpr double EPSMAC = 1.0e-16;
+
+#if defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+
+/**
+ * @brief No-op iterative refinement interface for HIP EVLOSER builds.
+ *
+ * EVLOSER iterative refinement currently depends on CUDA-only GLU/Krylov
+ * kernels.  HIP builds keep this interface available so shared solver code can
+ * compile, but the HIP EVLOSER path disables iterative refinement.
+ */
+class IterativeRefinement
+{
+public:
+  IterativeRefinement() = default;
+  IterativeRefinement(int restart, double tol, int maxit)
+      : restart_{restart},
+        maxit_{maxit},
+        tol_{tol}
+  {}
+  ~IterativeRefinement() = default;
+
+  int setup(cusparseHandle_t,
+            cublasHandle_t,
+            evloserRfHandle_t,
+            int,
+            double*,
+            int*,
+            int*,
+            double*,
+            double*)
+  {
+    return -1;
+  }
+
+  int getFinalNumberOfIterations() { return 0; }
+  double getFinalResidalNorm() { return 0.0; }
+  double getInitialResidalNorm() { return 0.0; }
+  double getBNorm() { return 0.0; }
+
+  void fgmres(double*, double*) {}
+
+  void set_tol(double tol) { tol_ = tol; }
+
+  int setup_system_matrix(int, int, int*, int*, double*) { return -1; }
+
+  int& maxit() { return maxit_; }
+
+  double& tol() { return tol_; }
+
+  std::string& orth_option() { return orth_option_; }
+
+  int& restart() { return restart_; }
+
+  int& conv_cond() { return conv_cond_; }
+
+private:
+  int restart_{0};
+  int maxit_{0};
+  double tol_{0.0};
+  int conv_cond_{0};
+  std::string orth_option_{"mgs"};
+};
+
+#else
 
 /**
  * @brief Iterative refinement class
@@ -31,7 +95,7 @@ public:
   ~IterativeRefinement();
   int setup(cusparseHandle_t cusparse_handle,
             cublasHandle_t cublas_handle,
-            cusolverRfHandle_t cusolverrf_handle,
+            evloserRfHandle_t cusolverrf_handle,
             int n,
             double* d_T,
             int* d_P,
@@ -105,7 +169,7 @@ private:
   // CUDA libraries handles - MUST BE SET AT INIT
   cusparseHandle_t cusparse_handle_{nullptr};
   cublasHandle_t cublas_handle_{nullptr};
-  cusolverRfHandle_t cusolverrf_handle_{nullptr};
+  evloserRfHandle_t cusolverrf_handle_{nullptr};
   cusolverSpHandle_t cusolver_handle_{nullptr};
 
   // GPU data (?)
@@ -172,5 +236,7 @@ private:
   template<typename T>
   void evloserCheckCudaError(T result, const char* const file, int const line);
 };
+
+#endif // defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 
 }  // namespace EVLOSER

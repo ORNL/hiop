@@ -54,7 +54,7 @@ static bool parse_arguments(int argc,
       } else if(std::string(argv[4]) == "-evloser_cuda_rf") {
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[4]) == "-evloser_hip_rf") {
-        use_hip_cuda_rf = true;
+        use_evloser_hip_rf = true;
       } else if(std::string(argv[4]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[4]) == "-ginkgo_cuda") {
@@ -83,7 +83,7 @@ static bool parse_arguments(int argc,
       } else if(std::string(argv[3]) == "-evloser_cuda_rf") {
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[3]) == "-evloser_hip_rf") {
-        use_hip_cuda_rf = true;
+        use_evloser_hip_rf = true;
       } else if(std::string(argv[3]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[3]) == "-ginkgo_cuda") {
@@ -112,7 +112,7 @@ static bool parse_arguments(int argc,
       } else if(std::string(argv[2]) == "-evloser_cuda_rf") {
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[2]) == "-evloser_hip_rf") {
-        use_hip_cuda_rf = true;
+        use_evloser_hip_rf = true;
       } else if(std::string(argv[2]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[2]) == "-ginkgo_cuda") {
@@ -141,7 +141,7 @@ static bool parse_arguments(int argc,
       } else if(std::string(argv[1]) == "-evloser_cuda_rf") {
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[1]) == "-evloser_hip_rf") {
-        use_hip_cuda_rf = true;
+        use_evloser_hip_rf = true;
       } else if(std::string(argv[1]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[1]) == "-ginkgo_cuda") {
@@ -332,9 +332,15 @@ int main(int argc, char** argv)
     } else {
       nlp.options->SetStringValue("linear_solver_sparse", "resolve");
     }
-    if(use_resolve_cuda_rf || use_evloser_cuda_rf || use_evloser_hip_rf) {
+    if(use_resolve_cuda_rf || use_evloser_cuda_rf) {
       nlp.options->SetStringValue("resolve_refactorization", "rf");
       nlp.options->SetIntegerValue("ir_inner_maxit", 20);
+      nlp.options->SetIntegerValue("ir_outer_maxit", 0);
+    }
+
+    if(use_evloser_hip_rf) {
+      nlp.options->SetStringValue("resolve_refactorization", "rf");
+      nlp.options->SetIntegerValue("ir_inner_maxit", 0);
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
     }
     nlp.options->SetStringValue("duals_init", "zero");

@@ -12,7 +12,7 @@
 
 #include "evloser_cusolver_defs.hpp"
 
-#elif defined(HIOP_USE_HIP)
+#elif defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 
 #include "evloser_hipsolver_defs.hpp"
 

@@ -57,12 +57,19 @@
 #include "EVLOSER/RefactorizationSolver.hpp"
 #include "EVLOSER/MatrixCsr.hpp"
 #include "EVLOSER/IterativeRefinement.hpp"
+#include "EVLOSER/evloser_gpu_defs.hpp"
 
 #include "hiop_blasdefs.hpp"
 
+#ifdef HIOP_USE_CUDA
 #include "cusparse_v2.h"
+#endif
+
+#include <algorithm>
+#include <numeric>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #define checkCudaErrors(val) hiopCheckCudaError((val), __FILE__, __LINE__)
 
@@ -175,6 +182,11 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     maxit_test = 50;
   }
   use_ir = "no";
+#if defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+  // EVLOSER iterative refinement currently depends on CUDA-only kernels.
+  // Keep the HIP path on RF only until the IR path is ported.
+  solver_->disable_iterative_refinement();
+#else
   if(maxit_test > 0) {
     use_ir = "yes";
     solver_->enable_iterative_refinement();
@@ -182,6 +194,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   } else {
     solver_->disable_iterative_refinement();
   }
+#endif
   if(use_ir == "yes") {
     if((refact == "rf")) {
       solver_->ir()->restart() = nlp_->options->GetInteger("ir_inner_restart");
@@ -264,8 +277,8 @@ hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
   // Delete CSR <--> triplet mappings
   delete[] index_convert_CSR2Triplet_host_;
   delete[] index_convert_extra_Diag2CSR_host_;
-  checkCudaErrors(cudaFree(index_convert_CSR2Triplet_device_));
-  checkCudaErrors(cudaFree(index_convert_extra_Diag2CSR_device_));
+  checkCudaErrors(evloserGpuFree(index_convert_CSR2Triplet_device_));
+  checkCudaErrors(evloserGpuFree(index_convert_extra_Diag2CSR_device_));
 }
 
 int hiopLinSolverSymSparseEVLOSER::matrixChanged()
@@ -333,11 +346,16 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
   // If the matrix is on device, copy it to the host mirror
   std::string mem_space = nlp_->options->GetString("mem_space");
   if(mem_space == "device") {
-    checkCudaErrors(cudaMemcpy(M_host_->M(), M_->M(), sizeof(double) * M_->numberOfNonzeros(), cudaMemcpyDeviceToHost));
     checkCudaErrors(
-        cudaMemcpy(M_host_->i_row(), M_->i_row(), sizeof(index_type) * M_->numberOfNonzeros(), cudaMemcpyDeviceToHost));
-    checkCudaErrors(
-        cudaMemcpy(M_host_->j_col(), M_->j_col(), sizeof(index_type) * M_->numberOfNonzeros(), cudaMemcpyDeviceToHost));
+      evloserGpuMemcpy(M_host_->M(), M_->M(), sizeof(double) * M_->numberOfNonzeros(), evloserMemcpyDeviceToHost));
+    checkCudaErrors(evloserGpuMemcpy(M_host_->i_row(),
+                                  M_->i_row(),
+                                  sizeof(index_type) * M_->numberOfNonzeros(),
+                                  evloserMemcpyDeviceToHost));
+    checkCudaErrors(evloserGpuMemcpy(M_host_->j_col(),
+                                  M_->j_col(),
+                                  sizeof(index_type) * M_->numberOfNonzeros(),
+                                  evloserMemcpyDeviceToHost));
   }
 
   // Transfer triplet to CSR form
@@ -390,10 +408,10 @@ void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 
     // If factorization was not successful, we need a copy of values on the host
     if(factorizationSetupSucc_ == 0)
-      checkCudaErrors(cudaMemcpy(solver_->mat_A_csr()->host_vals(),
+      checkCudaErrors(evloserGpuMemcpy(solver_->mat_A_csr()->host_vals(),
                                  solver_->mat_A_csr()->device_vals(),
                                  sizeof(double) * nnz_,
-                                 cudaMemcpyDeviceToHost));
+                                 evloserMemcpyDeviceToHost));
 
   } else {
     // KKT matrix is on the host
@@ -406,10 +424,10 @@ void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
       if(index_convert_extra_Diag2CSR_host_[i] != -1)
         vals[index_convert_extra_Diag2CSR_host_[i]] += M_->M()[M_->numberOfNonzeros() - n_ + i];
     }
-    checkCudaErrors(cudaMemcpy(solver_->mat_A_csr()->device_vals(),
+    checkCudaErrors(evloserGpuMemcpy(solver_->mat_A_csr()->device_vals(),
                                solver_->mat_A_csr()->host_vals(),
                                sizeof(double) * nnz_,
-                               cudaMemcpyHostToDevice));
+                               evloserMemcpyHostToDevice));
   }
 }
 
@@ -476,8 +494,8 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
   index_convert_CSR2Triplet_host_ = new int[nnz_];
   index_convert_extra_Diag2CSR_host_ = new int[n_];
-  checkCudaErrors(cudaMalloc(&index_convert_CSR2Triplet_device_, nnz_ * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&index_convert_extra_Diag2CSR_device_, n_ * sizeof(int)));
+  checkCudaErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), nnz_ * sizeof(int)));
+  checkCudaErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_extra_Diag2CSR_device_), n_ * sizeof(int)));
 
   int* nnz_each_row_tmp = new int[n_]{0};
   int total_nnz_tmp{0}, nnz_tmp{0}, rowID_tmp, colID_tmp;
@@ -537,14 +555,14 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       std::sort(col_idx + row_ptr[i], col_idx + row_ptr[i + 1]);
     }
   }
-  checkCudaErrors(cudaMemcpy(index_convert_CSR2Triplet_device_,
+  checkCudaErrors(evloserGpuMemcpy(index_convert_CSR2Triplet_device_,
                              index_convert_CSR2Triplet_host_,
                              nnz_ * sizeof(int),
-                             cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(index_convert_extra_Diag2CSR_device_,
+                             evloserMemcpyHostToDevice));
+  checkCudaErrors(evloserGpuMemcpy(index_convert_extra_Diag2CSR_device_,
                              index_convert_extra_Diag2CSR_host_,
                              n_ * sizeof(int),
-                             cudaMemcpyHostToDevice));
+                             evloserMemcpyHostToDevice));
   delete[] nnz_each_row_tmp;
 }
 

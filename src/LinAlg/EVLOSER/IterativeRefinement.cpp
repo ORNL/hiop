@@ -55,6 +55,8 @@
 
 #include "IterativeRefinement.hpp"
 
+#if !defined(HIOP_USE_HIP) && !defined(HAVE_HIP)
+
 #include "hiop_blasdefs.hpp"
 #include "KrylovSolverKernels.h"
 
@@ -695,3 +697,4 @@ void IterativeRefinement::evloserCheckCudaError(T result, const char* const file
 }
 
 }  // namespace EVLOSER
+#endif  // !defined(HIOP_USE_HIP) && !defined(HAVE_HIP)
