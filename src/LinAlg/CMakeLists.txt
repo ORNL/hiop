@@ -12,6 +12,7 @@ set(hiopLinAlg_INTERFACE_HEADERS
   hiopLinSolverSparseSTRUMPACK.hpp
   hiopLinSolverSparsePARDISO.hpp
   hiopLinSolverSparseReSolve.hpp
+  hiopLinSolverSparseEVLOSER.hpp
   hiopLinSolverUMFPACKZ.hpp
   hiopLinSolverCholCuSparse.hpp
   hiopMatrix.hpp
@@ -101,6 +102,10 @@ set(hiopLinAlg_CUSOLVER_LU_SRC
   hiopLinSolverSparseReSolve.cpp
 )
 
+set(hiopLinAlg_EVLOSER_SRC
+  hiopLinSolverSparseEVLOSER.cpp
+)
+
 set(hiopLinAlg_CUSOLVER_CHOL_SRC
   hiopLinSolverCholCuSparse.cpp
 )
@@ -151,7 +156,9 @@ if(HIOP_SPARSE)
     if(HIOP_USE_RESOLVE)
       add_subdirectory(ReSolve) 
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_CUSOLVER_LU_SRC})
+  list(APPEND hiopLinAlg_SRC ${hiopLinAlg_EVLOSER_SRC})
       set_source_files_properties(${hiopLinAlg_CUSOLVER_LU_SRC} PROPERTIES LANGUAGE CUDA)
+  set_source_files_properties(${hiopLinAlg_EVLOSER_SRC} PROPERTIES LANGUAGE CUDA)
     endif(HIOP_USE_RESOLVE)
     if(HIOP_USE_CUDA)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_CUSOLVER_CHOL_SRC})
