@@ -16,6 +16,7 @@ static bool parse_arguments(int argc,
                             bool& self_check,
                             bool& use_pardiso,
                             bool& use_cusolver,
+                            bool& use_evloser,
                             bool& use_ginkgo,
                             bool& use_ginkgo_cuda,
                             bool& use_ginkgo_hip,
@@ -23,6 +24,7 @@ static bool parse_arguments(int argc,
 {
   self_check = false;
   use_pardiso = false;
+  use_evloser = false;
   use_ginkgo = false;
   use_ginkgo_cuda = false;
   use_ginkgo_cuda = false;
@@ -50,6 +52,8 @@ static bool parse_arguments(int argc,
         use_pardiso = true;
       } else if(std::string(argv[4]) == "-cusolver") {
         use_cusolver = true;
+      } else if(std::string(argv[4]) == "-evloser") {
+        use_evloser = true;
       } else if(std::string(argv[4]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[4]) == "-ginkgo_cuda") {
@@ -70,6 +74,8 @@ static bool parse_arguments(int argc,
         use_pardiso = true;
       } else if(std::string(argv[3]) == "-cusolver") {
         use_cusolver = true;
+      } else if(std::string(argv[3]) == "-evloser") {
+        use_evloser = true;
       } else if(std::string(argv[3]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[3]) == "-ginkgo_cuda") {
@@ -90,6 +96,8 @@ static bool parse_arguments(int argc,
         use_pardiso = true;
       } else if(std::string(argv[2]) == "-cusolver") {
         use_cusolver = true;
+      } else if(std::string(argv[2]) == "-evloser") {
+        use_evloser = true;
       } else if(std::string(argv[2]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[2]) == "-ginkgo_cuda") {
@@ -116,7 +124,7 @@ static bool parse_arguments(int argc,
     scal = 1.0;
   }
 
-  if(use_cusolver && use_pardiso) {
+  if((use_cusolver || use_evloser) && use_pardiso) {
     printf("Selected both, cuSOLVER and Pardiso. ");
     printf("You can select only one linear solver.\n\n");
     return false;
@@ -140,10 +148,11 @@ static bool parse_arguments(int argc,
 
 // If HiOp is built without CUDA de-select cuSOLVER.
 #ifndef HIOP_USE_RESOLVE
-  if(use_cusolver) {
+  if(use_cusolver || use_evloser) {
     printf("HiOp built without support for ReSolve. ");
     printf("Using default linear solver ...\n");
     use_cusolver = false;
+    use_evloser = false;
   }
 #endif
 
@@ -164,6 +173,7 @@ static void usage(const char* exeName)
       "  '-pardiso' or '-cusolver': use Pardiso or cuSOLVER "
       "as the linear solver [optional]\n");
   printf("  '-cusolver': use cuSOLVER as the linear solver [optional]\n");
+  printf("  '-evloser': use EVLOSER as the linear solver [optional]\n");
   printf("  '-fr': force to reset feasibility in the 1st iteration [optional]\n");
   printf(
       "  '-selfcheck': compares the optimal objective with a previously saved value for the "
@@ -189,6 +199,7 @@ int main(int argc, char** argv)
   bool selfCheck = false;
   bool use_pardiso = false;
   bool use_cusolver = false;
+  bool use_evloser = false;
   bool use_ginkgo = false;
   bool use_ginkgo_cuda = false;
   bool use_ginkgo_hip = false;
@@ -203,6 +214,7 @@ int main(int argc, char** argv)
                       selfCheck,
                       use_pardiso,
                       use_cusolver,
+                      use_evloser,
                       use_ginkgo,
                       use_ginkgo_cuda,
                       use_ginkgo_hip,
@@ -230,10 +242,14 @@ int main(int argc, char** argv)
   if(use_pardiso) {
     nlp.options->SetStringValue("linear_solver_sparse", "pardiso");
   }
-  if(use_cusolver) {
+  if(use_cusolver || use_evloser) {
     nlp.options->SetStringValue("duals_init", "zero");
     nlp.options->SetStringValue("linsol_mode", "speculative");
-    nlp.options->SetStringValue("linear_solver_sparse", "resolve");
+    if(use_evloser) {
+      nlp.options->SetStringValue("linear_solver_sparse", "evloser");
+    } else {
+      nlp.options->SetStringValue("linear_solver_sparse", "resolve");
+    }
     nlp.options->SetStringValue("resolve_refactorization", "rf");
     nlp.options->SetIntegerValue("ir_inner_maxit", 100);
     nlp.options->SetNumericValue("ir_inner_tol", 1e-8);
