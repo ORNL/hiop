@@ -60,6 +60,40 @@
 #include <sys/time.h>
 #include <cuda_runtime.h>
 #include "cusolverSp_LOWLEVEL_PREVIEW.h"
+#include <cstddef>
+
+using evloserGpuError_t = cudaError_t;
+using evloserGpuMemcpyKind_t = cudaMemcpyKind;
+
+static const evloserGpuError_t evloserGpuSuccess = cudaSuccess;
+static const evloserGpuMemcpyKind_t evloserMemcpyHostToDevice = cudaMemcpyHostToDevice;
+static const evloserGpuMemcpyKind_t evloserMemcpyDeviceToHost = cudaMemcpyDeviceToHost;
+static const evloserGpuMemcpyKind_t evloserMemcpyDeviceToDevice = cudaMemcpyDeviceToDevice;
+
+inline evloserGpuError_t evloserGpuMalloc(void** ptr, size_t size)
+{
+  return cudaMalloc(ptr, size);
+}
+
+inline evloserGpuError_t evloserGpuFree(void* ptr)
+{
+  return cudaFree(ptr);
+}
+
+inline evloserGpuError_t evloserGpuMemcpy(void* dst, const void* src, size_t count, evloserGpuMemcpyKind_t kind)
+{
+  return cudaMemcpy(dst, src, count, kind);
+}
+
+inline evloserGpuError_t evloserGpuDeviceSynchronize()
+{
+  return cudaDeviceSynchronize();
+}
+
+inline const char* evloserGpuGetErrorString(evloserGpuError_t status)
+{
+  return cudaGetErrorString(status);
+}
 
 #include "cusolverRf.h"
 

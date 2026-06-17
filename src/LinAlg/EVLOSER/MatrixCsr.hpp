@@ -96,7 +96,7 @@ private:
   double* vals_host_{nullptr};
 
   /**
-   * @brief Check for CUDA errors.
+   * @brief Check for GPU backend errors.
    *
    * @tparam T - type of the result
    * @param result - result value
@@ -104,7 +104,7 @@ private:
    * @param line   - line at which the error occured
    */
   template<typename T>
-  void evloserCheckCudaError(T result, const char* const file, int const line);
+  void evloserCheckGpuError(T result, const char* const file, int const line);
 };
 
 }  // namespace EVLOSER

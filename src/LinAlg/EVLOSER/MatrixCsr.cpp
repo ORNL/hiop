@@ -56,14 +56,14 @@
 #include "hiop_blasdefs.hpp"
 #include "MatrixCsr.hpp"
 
-#include "cusparse_v2.h"
+#include "evloser_gpu_defs.hpp"
 #include <sstream>
 #include <string>
 #include <vector>
 #include <iostream>
 #include <cassert>
 
-#define checkCudaErrors(val) evloserCheckCudaError((val), __FILE__, __LINE__)
+#define checkGpuErrors(val) evloserCheckGpuError((val), __FILE__, __LINE__)
 
 namespace EVLOSER
 {
@@ -96,15 +96,15 @@ void MatrixCsr::allocate_size(int n)
   }
 
   n_ = n;
-  checkCudaErrors(cudaMalloc(&irows_, (n_ + 1) * sizeof(int)));
+  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&irows_), (n_ + 1) * sizeof(int)));
   irows_host_ = new int[n_ + 1]{0};
 }
 
 void MatrixCsr::allocate_nnz(int nnz)
 {
   if(jcols_ != nullptr || vals_ != nullptr || jcols_host_ != nullptr || vals_host_ != nullptr) {
-    checkCudaErrors(cudaFree(jcols_));
-    checkCudaErrors(cudaFree(vals_));
+    checkGpuErrors(evloserGpuFree(jcols_));
+    checkGpuErrors(evloserGpuFree(vals_));
     delete[] jcols_host_;
     delete[] vals_host_;
 
@@ -120,17 +120,17 @@ void MatrixCsr::allocate_nnz(int nnz)
     return;
   }
 
-  checkCudaErrors(cudaMalloc(&jcols_, nnz_ * sizeof(int)));
-  checkCudaErrors(cudaMalloc(&vals_, nnz_ * sizeof(double)));
+  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&jcols_), nnz_ * sizeof(int)));
+  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&vals_), nnz_ * sizeof(double)));
   jcols_host_ = new int[nnz_]{0};
   vals_host_ = new double[nnz_]{0};
 }
 
 void MatrixCsr::clear_data()
 {
-  checkCudaErrors(cudaFree(irows_));
-  checkCudaErrors(cudaFree(jcols_));
-  checkCudaErrors(cudaFree(vals_));
+  checkGpuErrors(evloserGpuFree(irows_));
+  checkGpuErrors(evloserGpuFree(jcols_));
+  checkGpuErrors(evloserGpuFree(vals_));
 
   irows_ = nullptr;
   jcols_ = nullptr;
@@ -153,11 +153,11 @@ void MatrixCsr::update_from_host_mirror()
   assert(has_device_storage());
   assert(has_host_mirror());
 
-  checkCudaErrors(cudaMemcpy(irows_, irows_host_, sizeof(int) * (n_ + 1), cudaMemcpyHostToDevice));
+  checkGpuErrors(evloserGpuMemcpy(irows_, irows_host_, sizeof(int) * (n_ + 1), evloserMemcpyHostToDevice));
 
   if(nnz_ > 0) {
-    checkCudaErrors(cudaMemcpy(jcols_, jcols_host_, sizeof(int) * nnz_, cudaMemcpyHostToDevice));
-    checkCudaErrors(cudaMemcpy(vals_, vals_host_, sizeof(double) * nnz_, cudaMemcpyHostToDevice));
+    checkGpuErrors(evloserGpuMemcpy(jcols_, jcols_host_, sizeof(int) * nnz_, evloserMemcpyHostToDevice));
+    checkGpuErrors(evloserGpuMemcpy(vals_, vals_host_, sizeof(double) * nnz_, evloserMemcpyHostToDevice));
   }
 }
 
@@ -166,11 +166,11 @@ void MatrixCsr::copy_to_host_mirror()
   assert(has_device_storage());
   assert(has_host_mirror());
 
-  checkCudaErrors(cudaMemcpy(irows_host_, irows_, sizeof(int) * (n_ + 1), cudaMemcpyDeviceToHost));
+  checkGpuErrors(evloserGpuMemcpy(irows_host_, irows_, sizeof(int) * (n_ + 1), evloserMemcpyDeviceToHost));
 
   if(nnz_ > 0) {
-    checkCudaErrors(cudaMemcpy(jcols_host_, jcols_, sizeof(int) * nnz_, cudaMemcpyDeviceToHost));
-    checkCudaErrors(cudaMemcpy(vals_host_, vals_, sizeof(double) * nnz_, cudaMemcpyDeviceToHost));
+    checkGpuErrors(evloserGpuMemcpy(jcols_host_, jcols_, sizeof(int) * nnz_, evloserMemcpyDeviceToHost));
+    checkGpuErrors(evloserGpuMemcpy(vals_host_, vals_, sizeof(double) * nnz_, evloserMemcpyDeviceToHost));
   }
 }
 
@@ -232,13 +232,13 @@ bool MatrixCsr::validate_host_structure(const char* caller, bool silent_output) 
   return true;
 }
 
-// Error checking utility for CUDA
+// Error checking utility for GPU backend
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>
-void MatrixCsr::evloserCheckCudaError(T result, const char* const file, int const line)
+void MatrixCsr::evloserCheckGpuError(T result, const char* const file, int const line)
 {
   if(result) {
-    std::cout << "CUDA error at " << file << ":" << line << " error# " << result << "\n";
+    std::cout << "GPU error at " << file << ":" << line << " error# " << result << "\n";
     assert(false);
   }
 }
