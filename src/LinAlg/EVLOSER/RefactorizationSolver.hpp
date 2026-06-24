@@ -60,6 +60,7 @@
 #include "evloser_execution_mode.hpp"
 #include "evloser_gpu_defs.hpp"
 #include <string>
+#include <vector>
 
 namespace EVLOSER
 {
@@ -74,6 +75,14 @@ class IterativeRefinement;
 class RefactorizationSolver
 {
 public:
+  enum class KluRecoveryAction
+  {
+    None,
+    RefactorAccepted,
+    FullFactorAccepted,
+    RefactorRetained,
+    Failed
+  };
   // constructor
   // RefactorizationSolver();
   RefactorizationSolver(int n, ExecutionMode execution_mode);
@@ -128,6 +137,31 @@ public:
   std::string& use_ir() { return use_ir_; }
 
   void set_silent_output(bool silent_output) { silent_output_ = silent_output; }
+
+  double& klu_suspicious_residual_threshold()
+  {
+    return klu_suspicious_residual_threshold_;
+  }
+
+  double& klu_residual_safety_limit()
+  {
+    return klu_residual_safety_limit_;
+  }
+
+  double& klu_improvement_ratio()
+  {
+    return klu_improvement_ratio_;
+  }
+
+  double& klu_minimum_improvement()
+  {
+    return klu_minimum_improvement_;
+  }
+
+  KluRecoveryAction last_klu_recovery_action() const
+  {
+    return last_klu_recovery_action_;
+  }
 
   /**
    * @brief Set up factorization of the first linear system.
@@ -219,6 +253,17 @@ private:
   klu_common Common_{};
   klu_symbolic* Symbolic_ = nullptr;
   klu_numeric* Numeric_ = nullptr;
+
+  bool klu_refactor_pending_validation_{false};
+  bool klu_refactor_succeeded_{false};
+
+  double klu_suspicious_residual_threshold_{1e-4};
+  double klu_residual_safety_limit_{1e-1};
+  double klu_improvement_ratio_{0.1};
+  double klu_minimum_improvement_{1e-10};
+
+  KluRecoveryAction last_klu_recovery_action_{
+      KluRecoveryAction::None};
   /*pieces of M */
   int* mia_ = nullptr;
   int* mja_ = nullptr;
@@ -263,6 +308,23 @@ private:
 
   /// Validate that the solution pointer is non-null and all solution values are finite.
   bool validate_solution(const double* solution, const char* caller) const;
+
+    /// Compute the normalized infinity-norm residual for the current CSR matrix.
+  double compute_klu_residual(const double* rhs,
+                              const double* solution) const;
+
+  /// Create fresh KLU numeric factors without replacing the currently retained factors.
+  klu_numeric* factor_klu_numeric(const char* caller);
+
+  /// Solve one candidate system and compute its normalized residual.
+  bool solve_klu_candidate(klu_numeric* numeric,
+                           const double* rhs,
+                           std::vector<double>& solution,
+                           double& residual,
+                           const char* caller);
+
+  /// Complete a CPU solve, including refactorization recovery when required.
+  bool solve_cpu_with_recovery(double* dx);
 
   int initializeKLU();
 

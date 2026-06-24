@@ -217,6 +217,167 @@ bool test_nonfinite_solution()
   return !solver.triangular_solve(rhs.data(), 0.0);
 }
 
+
+bool test_refactor_accepted()
+{
+  EVLOSER::RefactorizationSolver solver(3, EVLOSER::ExecutionMode::CPU);
+
+  const std::vector<int> rowptr{0, 2, 5, 7};
+  const std::vector<int> colind{0, 1, 0, 1, 2, 1, 2};
+  const std::vector<double> initial_values{
+      4.0, 1.0, 1.0, 3.0, 1.0, 1.0, 2.0};
+  const std::vector<double> updated_values{
+      5.0, 1.0, 1.0, 4.0, 1.0, 1.0, 3.0};
+
+  if(!load_matrix(solver, 3, rowptr, colind, initial_values) ||
+     !factorize(solver)) {
+    return false;
+  }
+
+  std::copy(updated_values.begin(),
+            updated_values.end(),
+            solver.mat_A_csr()->host_vals());
+
+  solver.setup_refactorization();
+
+  if(solver.refactorize() != 0) {
+    return false;
+  }
+
+  std::vector<double> rhs{7.0, 12.0, 11.0};
+
+  return solver.triangular_solve(rhs.data(), 0.0) &&
+         vectors_equal(rhs, {1.0, 2.0, 3.0}) &&
+         solver.last_klu_recovery_action() ==
+             EVLOSER::RefactorizationSolver::
+                 KluRecoveryAction::RefactorAccepted;
+}
+
+bool test_refactor_retained_after_comparison()
+{
+  EVLOSER::RefactorizationSolver solver(3, EVLOSER::ExecutionMode::CPU);
+
+  const std::vector<int> rowptr{0, 2, 5, 7};
+  const std::vector<int> colind{0, 1, 0, 1, 2, 1, 2};
+  const std::vector<double> initial_values{
+      4.0, 1.0, 1.0, 3.0, 1.0, 1.0, 2.0};
+  const std::vector<double> updated_values{
+      5.0, 1.0, 1.0, 4.0, 1.0, 1.0, 3.0};
+
+  if(!load_matrix(solver, 3, rowptr, colind, initial_values) ||
+     !factorize(solver)) {
+    return false;
+  }
+
+  std::copy(updated_values.begin(),
+            updated_values.end(),
+            solver.mat_A_csr()->host_vals());
+
+  solver.setup_refactorization();
+
+  /*
+   * Force comparison with a fresh numeric factorization. Since both
+   * candidates should have comparable residuals, retain the refactored
+   * factors.
+   */
+  solver.klu_suspicious_residual_threshold() = -1.0;
+
+  if(solver.refactorize() != 0) {
+    return false;
+  }
+
+  std::vector<double> rhs{7.0, 12.0, 11.0};
+
+  return solver.triangular_solve(rhs.data(), 0.0) &&
+         vectors_equal(rhs, {1.0, 2.0, 3.0}) &&
+         solver.last_klu_recovery_action() ==
+             EVLOSER::RefactorizationSolver::
+                 KluRecoveryAction::RefactorRetained;
+}
+
+bool test_failed_refactor_recovered_by_full_factorization()
+{
+  EVLOSER::RefactorizationSolver solver(2, EVLOSER::ExecutionMode::CPU);
+
+  const std::vector<int> rowptr{0, 2, 4};
+  const std::vector<int> colind{0, 1, 0, 1};
+
+  /*
+   * The updated matrix retains the sparsity pattern but invalidates the
+   * previous numerical pivot. A fresh factorization can choose a new pivot.
+   */
+  const std::vector<double> initial_values{
+      10.0, 1.0,
+      1.0, 1.0};
+
+  const std::vector<double> updated_values{
+      0.0, 1.0,
+      1.0, 10.0};
+
+  if(!load_matrix(solver, 2, rowptr, colind, initial_values) ||
+     !factorize(solver)) {
+    return false;
+  }
+
+  std::copy(updated_values.begin(),
+            updated_values.end(),
+            solver.mat_A_csr()->host_vals());
+
+  solver.setup_refactorization();
+
+  /*
+   * Refactorization failure is recoverable, so refactorize() permits the
+   * subsequent solve to attempt a fresh numeric factorization.
+   */
+  if(solver.refactorize() != 0) {
+    return false;
+  }
+
+  std::vector<double> rhs{-1.0, -8.0};
+
+  return solver.triangular_solve(rhs.data(), 0.0) &&
+         vectors_equal(rhs, {2.0, -1.0}) &&
+         solver.last_klu_recovery_action() ==
+             EVLOSER::RefactorizationSolver::
+                 KluRecoveryAction::FullFactorAccepted;
+}
+
+bool test_unrecoverable_refactor_failure()
+{
+  EVLOSER::RefactorizationSolver solver(2, EVLOSER::ExecutionMode::CPU);
+
+  const std::vector<int> rowptr{0, 2, 4};
+  const std::vector<int> colind{0, 1, 0, 1};
+  const std::vector<double> initial_values{
+      10.0, 1.0,
+      1.0, 1.0};
+  const std::vector<double> singular_values{
+      1.0, 1.0,
+      1.0, 1.0};
+
+  if(!load_matrix(solver, 2, rowptr, colind, initial_values) ||
+     !factorize(solver)) {
+    return false;
+  }
+
+  std::copy(singular_values.begin(),
+            singular_values.end(),
+            solver.mat_A_csr()->host_vals());
+
+  solver.setup_refactorization();
+
+  if(solver.refactorize() != 0) {
+    return false;
+  }
+
+  std::vector<double> rhs{2.0, 2.0};
+
+  return !solver.triangular_solve(rhs.data(), 0.0) &&
+         solver.last_klu_recovery_action() ==
+             EVLOSER::RefactorizationSolver::
+                 KluRecoveryAction::Failed;
+}
+
 }  // namespace
 
 int main()
@@ -236,6 +397,13 @@ int main()
       {"null RHS", test_null_rhs},
       {"non-finite matrix values", test_nonfinite_matrix_values},
       {"non-finite solution", test_nonfinite_solution},
+      {"refactor accepted", test_refactor_accepted},
+      {"refactor retained after fresh comparison",
+       test_refactor_retained_after_comparison},
+      {"failed refactor recovered by full factorization",
+       test_failed_refactor_recovered_by_full_factorization},
+      {"unrecoverable refactor failure",
+       test_unrecoverable_refactor_failure},
   };
 
   int failures = 0;

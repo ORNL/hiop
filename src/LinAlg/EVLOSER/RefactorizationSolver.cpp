@@ -62,12 +62,15 @@
 #endif
 
 #include "klu.h"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <iostream>
+
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
@@ -507,6 +510,384 @@ bool RefactorizationSolver::validate_solution(const double* solution, const char
   return true;
 }
 
+double RefactorizationSolver::compute_klu_residual(const double* rhs,
+                                                   const double* solution) const
+{
+  if(rhs == nullptr || solution == nullptr || mat_A_csr_ == nullptr) {
+    return std::numeric_limits<double>::infinity();
+  }
+
+  const int* rowptr = mat_A_csr_->host_irows();
+  const int* colind = mat_A_csr_->host_jcols();
+  const double* values = mat_A_csr_->host_vals();
+
+  long double residual_inf = 0.0L;
+  long double matrix_inf = 0.0L;
+  long double solution_inf = 0.0L;
+  long double rhs_inf = 0.0L;
+
+  for(int i = 0; i < n_; ++i) {
+    solution_inf =
+        std::max(solution_inf, std::abs(static_cast<long double>(solution[i])));
+    rhs_inf =
+        std::max(rhs_inf, std::abs(static_cast<long double>(rhs[i])));
+  }
+
+  for(int row = 0; row < n_; ++row) {
+    long double row_sum = 0.0L;
+    long double matrix_vector_product = 0.0L;
+
+    for(int k = rowptr[row]; k < rowptr[row + 1]; ++k) {
+      const long double value = static_cast<long double>(values[k]);
+
+      row_sum += std::abs(value);
+      matrix_vector_product +=
+          value * static_cast<long double>(solution[colind[k]]);
+    }
+
+    matrix_inf = std::max(matrix_inf, row_sum);
+    residual_inf =
+        std::max(residual_inf,
+                 std::abs(matrix_vector_product -
+                          static_cast<long double>(rhs[row])));
+  }
+
+  const long double scale =
+      std::max(1.0L, matrix_inf * solution_inf + rhs_inf);
+
+  const long double normalized_residual = residual_inf / scale;
+
+  if(!std::isfinite(normalized_residual)) {
+    return std::numeric_limits<double>::infinity();
+  }
+
+  return static_cast<double>(normalized_residual);
+}
+
+klu_numeric* RefactorizationSolver::factor_klu_numeric(const char* caller)
+{
+  if(!validate_system_matrix(caller)) {
+    return nullptr;
+  }
+
+  if(Symbolic_ == nullptr || Symbolic_->n != n_) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] " << caller
+                << " requires valid KLU symbolic analysis.\n";
+    }
+    return nullptr;
+  }
+
+  klu_common trial_common = Common_;
+  trial_common.status = KLU_OK;
+
+  klu_numeric* numeric =
+      klu_factor(mat_A_csr_->host_irows(),
+                 mat_A_csr_->host_jcols(),
+                 mat_A_csr_->host_vals(),
+                 Symbolic_,
+                 &trial_common);
+
+  const int status = trial_common.status;
+
+  if(numeric == nullptr || status != KLU_OK) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] " << caller
+                << " failed with KLU status " << status << "\n";
+    }
+
+    if(numeric != nullptr) {
+      klu_free_numeric(&numeric, &trial_common);
+    }
+
+    return nullptr;
+  }
+  return numeric;
+}
+
+bool RefactorizationSolver::solve_klu_candidate(
+    klu_numeric* numeric,
+    const double* rhs,
+    std::vector<double>& solution,
+    double& residual,
+    const char* caller)
+{
+  residual = std::numeric_limits<double>::infinity();
+
+  if(numeric == nullptr || rhs == nullptr) {
+    return false;
+  }
+
+  if(!validate_solution(rhs, caller)) {
+    return false;
+  }
+
+  solution.assign(rhs, rhs + n_);
+
+  klu_common trial_common = Common_;
+  trial_common.status = KLU_OK;
+
+  const int ok =
+      klu_solve(Symbolic_,
+                numeric,
+                n_,
+                1,
+                solution.data(),
+                &Common_);
+
+  const int status = Common_.status;
+
+  if(ok == 0 || status != KLU_OK) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] " << caller
+                << " failed with KLU status " << status << "\n";
+    }
+    return false;
+  }
+
+  if(!validate_solution(solution.data(), caller)) {
+    return false;
+  }
+
+  residual = compute_klu_residual(rhs, solution.data());
+
+  if(!std::isfinite(residual)) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] " << caller
+                << " produced a non-finite residual.\n";
+    }
+    return false;
+  }
+
+  return true;
+}
+
+bool RefactorizationSolver::solve_cpu_with_recovery(double* dx)
+{
+  last_klu_recovery_action_ = KluRecoveryAction::None;
+
+  if(dx == nullptr) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] KLU solve received a null right-hand side.\n";
+    }
+    last_klu_recovery_action_ = KluRecoveryAction::Failed;
+    return false;
+  }
+
+  if(!validate_system_matrix("KLU solve") ||
+     !validate_solution(dx, "KLU right-hand side")) {
+    last_klu_recovery_action_ = KluRecoveryAction::Failed;
+    return false;
+  }
+
+  if(Symbolic_ == nullptr || Symbolic_->n != n_) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] KLU solve requires valid symbolic analysis.\n";
+    }
+
+    last_klu_recovery_action_ = KluRecoveryAction::Failed;
+    return false;
+  }
+
+  /*
+   * A failed klu_refactor() may leave Common_.status nonzero. When recovery
+   * is pending, allow the fresh-factorization path to run instead of
+   * rejecting the solve based on that previous status.
+   */
+  if(!klu_refactor_pending_validation_ &&
+     !validate_klu_factorization("KLU solve")) {
+    last_klu_recovery_action_ = KluRecoveryAction::Failed;
+    return false;
+  }
+
+  const std::vector<double> rhs(dx, dx + n_);
+
+  std::vector<double> refactor_solution;
+  double residual_refactor =
+      std::numeric_limits<double>::infinity();
+
+  bool refactor_solution_usable = false;
+
+  /*
+   * With no pending value-only refactorization, Numeric_ already represents
+   * a fresh factorization. Solve normally and apply only the loose safety
+   * limit.
+   */
+  if(!klu_refactor_pending_validation_) {
+    if(!solve_klu_candidate(Numeric_,
+                            rhs.data(),
+                            refactor_solution,
+                            residual_refactor,
+                            "KLU solve")) {
+      last_klu_recovery_action_ = KluRecoveryAction::Failed;
+      return false;
+    }
+
+    if(residual_refactor > klu_residual_safety_limit_) {
+      if(!silent_output_) {
+        std::cout << "[EVLOSER] KLU residual "
+                  << residual_refactor
+                  << " exceeds safety limit "
+                  << klu_residual_safety_limit_ << "\n";
+      }
+
+      last_klu_recovery_action_ = KluRecoveryAction::Failed;
+      return false;
+    }
+
+    std::copy(refactor_solution.begin(),
+              refactor_solution.end(),
+              dx);
+
+    return true;
+  }
+
+  if(klu_refactor_succeeded_) {
+    refactor_solution_usable =
+        solve_klu_candidate(Numeric_,
+                            rhs.data(),
+                            refactor_solution,
+                            residual_refactor,
+                            "KLU refactorized solve");
+  }
+
+  const bool fresh_factorization_required =
+      !refactor_solution_usable ||
+      residual_refactor > klu_suspicious_residual_threshold_;
+
+  if(!fresh_factorization_required) {
+    if(residual_refactor > klu_residual_safety_limit_) {
+      if(!silent_output_) {
+        std::cout << "[EVLOSER] KLU refactorized residual "
+                  << residual_refactor
+                  << " exceeds safety limit "
+                  << klu_residual_safety_limit_ << "\n";
+      }
+
+      klu_refactor_pending_validation_ = false;
+      klu_refactor_succeeded_ = false;
+      last_klu_recovery_action_ = KluRecoveryAction::Failed;
+      return false;
+    }
+
+    std::copy(refactor_solution.begin(),
+              refactor_solution.end(),
+              dx);
+
+    klu_refactor_pending_validation_ = false;
+    klu_refactor_succeeded_ = false;
+    last_klu_recovery_action_ =
+        KluRecoveryAction::RefactorAccepted;
+
+    return true;
+  }
+
+  if(!silent_output_ && refactor_solution_usable) {
+    std::cout << "[EVLOSER] KLU refactorized residual "
+              << residual_refactor
+              << " exceeds suspicious-result threshold "
+              << klu_suspicious_residual_threshold_
+              << "; trying fresh factorization.\n";
+  }
+
+  klu_numeric* full_numeric =
+      factor_klu_numeric("KLU recovery factorization");
+
+  std::vector<double> full_solution;
+  double residual_full =
+      std::numeric_limits<double>::infinity();
+
+  const bool full_solution_usable =
+      full_numeric != nullptr &&
+      solve_klu_candidate(full_numeric,
+                          rhs.data(),
+                          full_solution,
+                          residual_full,
+                          "KLU recovery solve");
+
+  const bool refactor_candidate_safe =
+      refactor_solution_usable &&
+      residual_refactor <= klu_residual_safety_limit_;
+
+  const bool full_candidate_safe =
+      full_solution_usable &&
+      residual_full <= klu_residual_safety_limit_;
+
+  if(!refactor_candidate_safe && !full_candidate_safe) {
+    if(full_numeric != nullptr) {
+      klu_free_numeric(&full_numeric, &Common_);
+    }
+
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] KLU recovery produced no candidate "
+                   "within the residual safety limit.\n";
+    }
+
+    klu_refactor_pending_validation_ = false;
+    klu_refactor_succeeded_ = false;
+    last_klu_recovery_action_ = KluRecoveryAction::Failed;
+
+    return false;
+  }
+
+  const bool full_factor_materially_better =
+      full_candidate_safe &&
+      refactor_candidate_safe &&
+      residual_full <
+          klu_improvement_ratio_ * residual_refactor &&
+      residual_refactor - residual_full >
+          klu_minimum_improvement_;
+
+  const bool keep_full_factors =
+      full_candidate_safe &&
+      (!refactor_candidate_safe ||
+       full_factor_materially_better);
+
+  if(keep_full_factors) {
+    if(Numeric_ != nullptr) {
+      klu_free_numeric(&Numeric_, &Common_);
+    }
+
+    Numeric_ = full_numeric;
+    full_numeric = nullptr;
+
+    std::copy(full_solution.begin(),
+              full_solution.end(),
+              dx);
+
+    last_klu_recovery_action_ =
+        KluRecoveryAction::FullFactorAccepted;
+  } else {
+    /*
+     * Retain the refactored factors unless the fresh factorization is
+     * materially better. For the current solve, return whichever finite
+     * candidate has the smaller residual.
+     */
+    if(full_candidate_safe &&
+       residual_full < residual_refactor) {
+      std::copy(full_solution.begin(),
+                full_solution.end(),
+                dx);
+    } else {
+      std::copy(refactor_solution.begin(),
+                refactor_solution.end(),
+                dx);
+    }
+
+    if(full_numeric != nullptr) {
+      klu_free_numeric(&full_numeric, &Common_);
+    }
+
+    last_klu_recovery_action_ =
+        KluRecoveryAction::RefactorRetained;
+  }
+
+  klu_refactor_pending_validation_ = false;
+  klu_refactor_succeeded_ = false;
+
+  return true;
+}
+
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 bool RefactorizationSolver::checkEvloserRfStatus(evloserRfStatus_t status, const char* caller) const
@@ -565,6 +946,10 @@ int RefactorizationSolver::setup_factorization()
     return -1;
   }
 
+  klu_refactor_pending_validation_ = false;
+  klu_refactor_succeeded_ = false;
+  last_klu_recovery_action_ = KluRecoveryAction::None;
+
   // A new matrix structure invalidates both existing KLU states.
   if(Numeric_ != nullptr) {
     klu_free_numeric(&Numeric_, &Common_);
@@ -596,38 +981,27 @@ int RefactorizationSolver::setup_factorization()
 
 int RefactorizationSolver::factorize()
 {
-  if(!validate_system_matrix("KLU factorization")) {
+  klu_numeric* fresh_numeric =
+      factor_klu_numeric("KLU factorization");
+
+  if(fresh_numeric == nullptr) {
     return -1;
   }
 
-  if(Symbolic_ == nullptr || Symbolic_->n != n_) {
-    if(!silent_output_) {
-      std::cout << "[EVLOSER] KLU factorization requires valid symbolic analysis.\n";
-    }
-    return -1;
-  }
-
-  // A fresh factorization replaces only the numeric state.
   if(Numeric_ != nullptr) {
     klu_free_numeric(&Numeric_, &Common_);
   }
 
-  Numeric_ = klu_factor(mat_A_csr_->host_irows(),
-                        mat_A_csr_->host_jcols(),
-                        mat_A_csr_->host_vals(),
-                        Symbolic_,
-                        &Common_);
+  Numeric_ = fresh_numeric;
 
-  if(Numeric_ == nullptr || Common_.status != KLU_OK) {
-    if(!silent_output_) {
-      std::cout << "[EVLOSER] KLU numeric factorization failed with status "
-                << Common_.status << "\n";
-    }
-    return -1;
-  }
-
+  klu_refactor_pending_validation_ = false;
+  klu_refactor_succeeded_ = false;
+  last_klu_recovery_action_ = KluRecoveryAction::None;
   is_first_solve_ = true;
-  return validate_klu_factorization("KLU factorization") ? 0 : -1;
+
+  return validate_klu_factorization("KLU factorization")
+             ? 0
+             : -1;
 }
 
 void RefactorizationSolver::setup_refactorization()
@@ -676,29 +1050,48 @@ void RefactorizationSolver::setup_refactorization()
 int RefactorizationSolver::refactorize()
 {
   if(!validate_system_matrix("refactorization")) {
+    if(execution_mode_ == ExecutionMode::CPU) {
+      klu_refactor_pending_validation_ = false;
+      klu_refactor_succeeded_ = false;
+      last_klu_recovery_action_ = KluRecoveryAction::Failed;
+    }
     return -1;
   }
 
   if(execution_mode_ == ExecutionMode::CPU) {
     if(!validate_klu_factorization("KLU refactorization")) {
+      klu_refactor_pending_validation_ = false;
+      klu_refactor_succeeded_ = false;
+      last_klu_recovery_action_ = KluRecoveryAction::Failed;
       return -1;
     }
 
-    const int ok = klu_refactor(mat_A_csr_->host_irows(),
-                                mat_A_csr_->host_jcols(),
-                                mat_A_csr_->host_vals(),
-                                Symbolic_,
-                                Numeric_,
-                                &Common_);
+    klu_refactor_pending_validation_ = true;
+    klu_refactor_succeeded_ = false;
+    last_klu_recovery_action_ = KluRecoveryAction::None;
 
-    if(ok == 0 || Common_.status != KLU_OK) {
-      if(!silent_output_) {
-        std::cout << "[EVLOSER] KLU refactorization failed with status "
-                  << Common_.status << "\n";
-      }
-      return -1;
+    const int ok =
+        klu_refactor(mat_A_csr_->host_irows(),
+                     mat_A_csr_->host_jcols(),
+                     mat_A_csr_->host_vals(),
+                     Symbolic_,
+                     Numeric_,
+                     &Common_);
+
+    klu_refactor_succeeded_ =
+        ok != 0 && Common_.status == KLU_OK;
+
+    if(!klu_refactor_succeeded_ && !silent_output_) {
+      std::cout
+          << "[EVLOSER] KLU refactorization failed with status "
+          << Common_.status
+          << "; fresh factorization will be attempted during solve.\n";
     }
 
+    /*
+     * A failed KLU refactorization is recoverable. Continue to the solve,
+     * where a fresh numeric factorization will be attempted.
+     */
     return 0;
   }
 
@@ -707,7 +1100,8 @@ int RefactorizationSolver::refactorize()
   if(refact_ == "glu") {
     if(execution_mode_ != ExecutionMode::CUDA) {
       if(!silent_output_) {
-        std::cout << "[EVLOSER] GLU refactorization requires CUDA execution mode.\n";
+        std::cout
+            << "[EVLOSER] GLU refactorization requires CUDA execution mode.\n";
       }
       return -1;
     }
@@ -721,22 +1115,28 @@ int RefactorizationSolver::refactorize()
                                      mat_A_csr_->device_irows(),
                                      mat_A_csr_->device_jcols(),
                                      info_M_);
-    sp_status_ = cusolverSpDgluFactor(handle_cusolver_, info_M_, d_work_);
+
+    sp_status_ =
+        cusolverSpDgluFactor(handle_cusolver_, info_M_, d_work_);
   } else {
     if(refact_ == "rf") {
       if(resetEvloserRfValues("GPU RF reset values") != 0) {
         return -1;
       }
+
       if(refactorizeEvloserRf("GPU RF refactorization") != 0) {
         return -1;
       }
     }
   }
+
   return 0;
 #endif
 
   if(!silent_output_) {
-    std::cout << "[EVLOSER] Selected refactorization backend is unavailable in this build.\n";
+    std::cout
+        << "[EVLOSER] Selected refactorization backend is unavailable "
+           "in this build.\n";
   }
 
   return -1;
@@ -744,40 +1144,16 @@ int RefactorizationSolver::refactorize()
 
 bool RefactorizationSolver::triangular_solve(double* dx, double tol)
 {
+  if(execution_mode_ == ExecutionMode::CPU) {
+    (void)tol;
+    return solve_cpu_with_recovery(dx);
+  }
+
   if(dx == nullptr) {
     if(!silent_output_) {
       std::cout << "[EVLOSER] Solve received a null right-hand side.\n";
     }
     return false;
-  }
-
-  if(execution_mode_ == ExecutionMode::CPU) {
-    (void)tol;
-
-    if(!validate_klu_factorization("KLU solve")) {
-      return false;
-    }
-
-    if(!validate_solution(dx, "KLU right-hand side")) {
-      return false;
-    }
-
-    const int ok = klu_solve(Symbolic_,
-                             Numeric_,
-                             n_,
-                             1,
-                             dx,
-                             &Common_);
-
-    if(ok == 0 || Common_.status != KLU_OK) {
-      if(!silent_output_) {
-        std::cout << "[EVLOSER] KLU solve failed with status "
-                  << Common_.status << "\n";
-      }
-      return false;
-    }
-
-    return validate_solution(dx, "KLU solve");
   }
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
