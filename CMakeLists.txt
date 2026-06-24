@@ -544,6 +544,13 @@ if (HIOP_WITH_MAKETEST)
   add_test(NAME SparseMatrixTest COMMAND ${RUNCMD} "$<TARGET_FILE:testMatrixSparse>")
   add_test(NAME SymmetricSparseMatrixTest COMMAND ${RUNCMD} "$<TARGET_FILE:testMatrixSymSparse>")
 
+  if(HIOP_USE_EVLOSER AND NOT HIOP_USE_GPU)
+    add_test(
+      NAME EVLOSERKLUCPU
+      COMMAND ${RUNCMD} "$<TARGET_FILE:testEVLOSERKLUCPU>"
+    )
+  endif()
+
   # Test drivers in the form of user applications
   add_subdirectory(src/Drivers)
 endif(HIOP_WITH_MAKETEST)

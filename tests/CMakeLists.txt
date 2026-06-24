@@ -71,3 +71,18 @@ target_link_libraries(test_pcg PRIVATE HiOp::HiOp)
 
 add_executable(test_bicgstab ${testBiCGStab_SRC})
 target_link_libraries(test_bicgstab PRIVATE HiOp::HiOp)
+
+if(HIOP_USE_EVLOSER AND NOT HIOP_USE_GPU)
+  add_executable(
+    testEVLOSERKLUCPU
+    LinAlg/testEVLOSERKLUCPU.cpp
+  )
+
+  target_link_libraries(
+    testEVLOSERKLUCPU
+    PRIVATE
+      EVLOSER
+      KLU
+  )
+
+endif()

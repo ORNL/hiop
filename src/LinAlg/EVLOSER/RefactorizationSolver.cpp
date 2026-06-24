@@ -63,6 +63,7 @@
 
 #include "klu.h"
 #include <cassert>
+#include <cmath>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -355,8 +356,13 @@ RefactorizationSolver::~RefactorizationSolver()
     }
   }
 #endif
-  klu_free_symbolic(&Symbolic_, &Common_);
-  klu_free_numeric(&Numeric_, &Common_);
+  if(Numeric_ != nullptr) {
+    klu_free_numeric(&Numeric_, &Common_);
+  }
+
+  if(Symbolic_ != nullptr) {
+    klu_free_symbolic(&Symbolic_, &Common_);
+  }
   delete[] mia_;
   delete[] mja_;
 }
@@ -430,7 +436,8 @@ bool RefactorizationSolver::validate_system_matrix(const char* caller) const
     return false;
   }
 
-  return mat_A_csr_->validate_host_structure(caller, silent_output_);
+  return mat_A_csr_->validate_host_structure(caller, silent_output_) &&
+         mat_A_csr_->validate_host_values(caller, silent_output_);
 }
 
 bool RefactorizationSolver::validate_klu_factorization(const char* caller) const
@@ -471,6 +478,30 @@ bool RefactorizationSolver::validate_klu_factorization(const char* caller) const
                 << ": missing permutation data\n";
     }
     return false;
+  }
+
+  return true;
+}
+
+bool RefactorizationSolver::validate_solution(const double* solution, const char* caller) const
+{
+  const char* caller_name = caller == nullptr ? "unknown caller" : caller;
+
+  if(solution == nullptr) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] Invalid vector in " << caller_name << ": pointer is null\n";
+    }
+    return false;
+  }
+
+  for(int i = 0; i < n_; ++i) {
+    if(!std::isfinite(solution[i])) {
+      if(!silent_output_) {
+        std::cout << "[EVLOSER] Invalid vector in " << caller_name
+                  << ": entry " << i << " is not finite\n";
+      }
+      return false;
+    }
   }
 
   return true;
@@ -525,39 +556,78 @@ int RefactorizationSolver::refactorizeEvloserRf(const char* caller)
 
 int RefactorizationSolver::setup_factorization()
 {
+  if(fact_ != "klu") {
+    assert(false && "Only KLU is available for the first factorization.");
+    return -1;
+  }
+
   if(!validate_system_matrix("KLU analysis")) {
     return -1;
   }
 
-  int* row_ptr = mat_A_csr_->host_irows();
-  int* col_idx = mat_A_csr_->host_jcols();
-
-  if(fact_ == "klu") {
-    /* initialize KLU setup parameters, dont factorize yet */
-    initializeKLU();
-
-    /*perform KLU but only the symbolic analysis (important)   */
-    klu_free_symbolic(&Symbolic_, &Common_);
+  // A new matrix structure invalidates both existing KLU states.
+  if(Numeric_ != nullptr) {
     klu_free_numeric(&Numeric_, &Common_);
-    Symbolic_ = klu_analyze(n_, row_ptr, col_idx, &Common_);
-
-    if(Symbolic_ == nullptr) {
-      return -1;
-    }
-  } else {  // for future
-    assert(0 && "Only KLU is available for the first factorization.\n");
   }
+
+  if(Symbolic_ != nullptr) {
+    klu_free_symbolic(&Symbolic_, &Common_);
+  }
+
+  if(initializeKLU() != 0) {
+    return -1;
+  }
+
+  Symbolic_ = klu_analyze(n_,
+                          mat_A_csr_->host_irows(),
+                          mat_A_csr_->host_jcols(),
+                          &Common_);
+
+  if(Symbolic_ == nullptr || Common_.status != KLU_OK) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] KLU symbolic analysis failed with status "
+                << Common_.status << "\n";
+    }
+    return -1;
+  }
+
   return 0;
 }
 
 int RefactorizationSolver::factorize()
 {
+  if(!validate_system_matrix("KLU factorization")) {
+    return -1;
+  }
+
+  if(Symbolic_ == nullptr || Symbolic_->n != n_) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] KLU factorization requires valid symbolic analysis.\n";
+    }
+    return -1;
+  }
+
+  // A fresh factorization replaces only the numeric state.
+  if(Numeric_ != nullptr) {
+    klu_free_numeric(&Numeric_, &Common_);
+  }
+
   Numeric_ = klu_factor(mat_A_csr_->host_irows(),
                         mat_A_csr_->host_jcols(),
                         mat_A_csr_->host_vals(),
                         Symbolic_,
                         &Common_);
-  return (Numeric_ == nullptr) ? -1 : 0;
+
+  if(Numeric_ == nullptr || Common_.status != KLU_OK) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] KLU numeric factorization failed with status "
+                << Common_.status << "\n";
+    }
+    return -1;
+  }
+
+  is_first_solve_ = true;
+  return validate_klu_factorization("KLU factorization") ? 0 : -1;
 }
 
 void RefactorizationSolver::setup_refactorization()
@@ -567,9 +637,7 @@ void RefactorizationSolver::setup_refactorization()
   }
 
   if(execution_mode_ == ExecutionMode::CPU) {
-    if(!silent_output_) {
-      std::cout << "[EVLOSER] CPU refactorization setup is not available yet.\n";
-    }
+    // KLU numeric state is already available from factorize().
     return;
   }
 
@@ -601,11 +669,6 @@ void RefactorizationSolver::setup_refactorization()
   } else {  // for future -
     assert(0 && "Only glu and rf refactorizations available.\n");
   }
-#else
-
-  if(!silent_output_) {
-    std::cout << "[EVLOSER] GPU refactorization is unavailable in this build.\n";
-  }
 
 #endif
 }
@@ -617,10 +680,26 @@ int RefactorizationSolver::refactorize()
   }
 
   if(execution_mode_ == ExecutionMode::CPU) {
-    if(!silent_output_) {
-      std::cout << "[EVLOSER] CPU refactorization is not available yet.\n";
+    if(!validate_klu_factorization("KLU refactorization")) {
+      return -1;
     }
-    return -1;
+
+    const int ok = klu_refactor(mat_A_csr_->host_irows(),
+                                mat_A_csr_->host_jcols(),
+                                mat_A_csr_->host_vals(),
+                                Symbolic_,
+                                Numeric_,
+                                &Common_);
+
+    if(ok == 0 || Common_.status != KLU_OK) {
+      if(!silent_output_) {
+        std::cout << "[EVLOSER] KLU refactorization failed with status "
+                  << Common_.status << "\n";
+      }
+      return -1;
+    }
+
+    return 0;
   }
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
@@ -654,24 +733,51 @@ int RefactorizationSolver::refactorize()
     }
   }
   return 0;
-#else
+#endif
 
   if(!silent_output_) {
-    std::cout << "[EVLOSER] GPU refactorization is unavailable in this build.\n";
+    std::cout << "[EVLOSER] Selected refactorization backend is unavailable in this build.\n";
   }
 
   return -1;
-
-#endif
 }
 
 bool RefactorizationSolver::triangular_solve(double* dx, double tol)
 {
-  if(execution_mode_ == ExecutionMode::CPU) {
+  if(dx == nullptr) {
     if(!silent_output_) {
-      std::cout << "[EVLOSER] CPU triangular solve is not available yet.\n";
+      std::cout << "[EVLOSER] Solve received a null right-hand side.\n";
     }
     return false;
+  }
+
+  if(execution_mode_ == ExecutionMode::CPU) {
+    (void)tol;
+
+    if(!validate_klu_factorization("KLU solve")) {
+      return false;
+    }
+
+    if(!validate_solution(dx, "KLU right-hand side")) {
+      return false;
+    }
+
+    const int ok = klu_solve(Symbolic_,
+                             Numeric_,
+                             n_,
+                             1,
+                             dx,
+                             &Common_);
+
+    if(ok == 0 || Common_.status != KLU_OK) {
+      if(!silent_output_) {
+        std::cout << "[EVLOSER] KLU solve failed with status "
+                  << Common_.status << "\n";
+      }
+      return false;
+    }
+
+    return validate_solution(dx, "KLU solve");
   }
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
@@ -711,12 +817,36 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol)
   if(refact_ == "rf") {
     // First solve is performed on CPU
     if(is_first_solve_) {
-      checkGpuErrors(evloserGpuMemcpy(hostx_, dx, sizeof(double) * n_, evloserMemcpyDeviceToHost));
-      (void)klu_solve(Symbolic_, Numeric_, n_, 1, hostx_, &Common_);
-      klu_free_numeric(&Numeric_, &Common_);
-      klu_free_symbolic(&Symbolic_, &Common_);
+      checkGpuErrors(evloserGpuMemcpy(hostx_,
+                                    dx,
+                                    sizeof(double) * n_,
+                                    evloserMemcpyDeviceToHost));
+
+      const int ok = klu_solve(Symbolic_,
+                              Numeric_,
+                              n_,
+                              1,
+                              hostx_,
+                              &Common_);
+
+      if(ok == 0 || Common_.status != KLU_OK) {
+        if(!silent_output_) {
+          std::cout << "[EVLOSER] Initial KLU solve failed with status "
+                    << Common_.status << "\n";
+        }
+        return false;
+      }
+
+      if(!validate_solution(hostx_, "initial KLU solve")) {
+        return false;
+      }
+
+      checkGpuErrors(evloserGpuMemcpy(dx,
+                                    hostx_,
+                                    sizeof(double) * n_,
+                                    evloserMemcpyHostToDevice));
+
       is_first_solve_ = false;
-      checkGpuErrors(evloserGpuMemcpy(dx, hostx_, sizeof(double) * n_, evloserMemcpyHostToDevice));
       return true;
     }
 
@@ -829,15 +959,27 @@ int RefactorizationSolver::createM(const int n,
 
 int RefactorizationSolver::initializeKLU()
 {
-  klu_defaults(&Common_);
+  if(klu_defaults(&Common_) == 0) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] klu_defaults failed.\n";
+    }
+    return -1;
+  }
 
-  // TODO: consider making this a part of setup options so that user can
-  // set up these values. For now, we keep them hard-wired.
+  // TODO: consider making these user-configurable.
   Common_.btf = 0;
   Common_.ordering = ordering_;  // COLAMD=1; AMD=0
   Common_.tol = 0.1;
   Common_.scale = -1;
   Common_.halt_if_singular = 1;
+
+  if(Common_.status != KLU_OK) {
+    if(!silent_output_) {
+      std::cout << "[EVLOSER] Invalid KLU initialization status "
+                << Common_.status << "\n";
+    }
+    return -1;
+  }
 
   return 0;
 }

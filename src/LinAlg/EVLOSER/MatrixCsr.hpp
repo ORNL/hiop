@@ -46,6 +46,15 @@ public:
    */
   bool validate_host_structure(const char* caller, bool silent_output) const;
 
+  /**
+   * @brief Validate that all host-side CSR values are finite.
+   *
+   * @param caller Name of the caller used in diagnostic messages.
+   * @param silent_output Suppress diagnostic output when true.
+   * @return true if every stored host value is finite.
+   */
+  bool validate_host_values(const char* caller, bool silent_output) const;
+
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   /// Return device row-pointer storage.

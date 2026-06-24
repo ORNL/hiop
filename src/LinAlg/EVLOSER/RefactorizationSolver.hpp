@@ -157,11 +157,14 @@ public:
   int refactorize();
 
   /**
-   * @brief Invokes triangular solver given matrix factors
+   * @brief Solve the factored linear system.
    *
-   * @param dx
-   * @param tol
-   * @return bool
+   * In CPU execution mode, dx must point to host memory. In CUDA or HIP
+   * execution mode, dx must point to device memory.
+   *
+   * @param dx rhs on entry and solution on return.
+   * @param tol ir tolerance for GPU execution.
+   * @return bool true when the solve succeeds and the solution is finite.
    */
   bool triangular_solve(double* dx, double tol);
 
@@ -213,7 +216,7 @@ private:
 
   // KLU stuff
   int klu_status_;
-  klu_common Common_;
+  klu_common Common_{};
   klu_symbolic* Symbolic_ = nullptr;
   klu_numeric* Numeric_ = nullptr;
   /*pieces of M */
@@ -257,6 +260,9 @@ private:
 
   /// Validate that KLU symbolic and numeric factors are available and dimensionally consistent.
   bool validate_klu_factorization(const char* caller) const;
+
+  /// Validate that the solution pointer is non-null and all solution values are finite.
+  bool validate_solution(const double* solution, const char* caller) const;
 
   int initializeKLU();
 

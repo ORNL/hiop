@@ -62,6 +62,7 @@
 #include <vector>
 #include <iostream>
 #include <cassert>
+#include <cmath>
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
@@ -293,6 +294,40 @@ bool MatrixCsr::validate_host_structure(const char* caller, bool silent_output) 
   for(int k = 0; k < nnz_; ++k) {
     if(jcols_host_[k] < 0 || jcols_host_[k] >= n_) {
       return report("column index out of range");
+    }
+  }
+
+  return true;
+}
+
+bool MatrixCsr::validate_host_values(const char* caller, bool silent_output) const
+{
+  const char* caller_name = caller == nullptr ? "unknown caller" : caller;
+
+  auto report = [&](const std::string& message) {
+    if(!silent_output) {
+      std::cout << "[EVLOSER] Invalid CSR matrix values in " << caller_name << ": " << message << "\n";
+    }
+    return false;
+  };
+
+  if(nnz_ < 0) {
+    return report("number of nonzeros is negative");
+  }
+
+  if(nnz_ == 0) {
+    return true;
+  }
+
+  if(vals_host_ == nullptr) {
+    return report("host value array is null");
+  }
+
+  for(int k = 0; k < nnz_; ++k) {
+    if(!std::isfinite(vals_host_[k])) {
+      std::ostringstream message;
+      message << "matrix value at entry " << k << " is not finite";
+      return report(message.str());
     }
   }
 
