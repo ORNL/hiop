@@ -59,6 +59,7 @@
 
 #include "hiopLinSolver.hpp"
 #include "hiopMatrixSparseTriplet.hpp"
+#include "evloser_execution_mode.hpp"
 #include <unordered_map>
 
 /** Implements the sparse linear solver class using the EVLOSER interface
@@ -109,6 +110,7 @@ public:
   }
 
 protected:
+  const EVLOSER::ExecutionMode execution_mode_;  ///< Selected EVLOSER execution path
   EVLOSER::RefactorizationSolver* solver_;
 
   int m_;    ///< number of rows of the whole matrix

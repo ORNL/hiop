@@ -1,12 +1,14 @@
 #pragma once
 
+#include "evloser_execution_mode.hpp"
+
 namespace EVLOSER
 {
 
 class MatrixCsr
 {
 public:
-  MatrixCsr();
+  explicit MatrixCsr(ExecutionMode execution_mode);
   ~MatrixCsr();
 
   /// Allocate device and host row-pointer storage for an n-by-n CSR matrix.
@@ -93,6 +95,7 @@ public:
 #endif
 
 private:
+  const ExecutionMode execution_mode_;  ///< Selected CPU, CUDA, or HIP execution path
   int n_{0};
   int nnz_{0};
 

@@ -71,7 +71,7 @@
 namespace EVLOSER
 {
 
-MatrixCsr::MatrixCsr() {}
+MatrixCsr::MatrixCsr(ExecutionMode execution_mode) : execution_mode_(execution_mode) {}
 
 MatrixCsr::~MatrixCsr()
 {
@@ -82,6 +82,10 @@ MatrixCsr::~MatrixCsr()
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 bool MatrixCsr::has_device_storage() const
 {
+  if(execution_mode_ == ExecutionMode::CPU) {
+    return false;
+  }
+
   const bool size_allocated = (n_ == 0) || (irows_ != nullptr);
   const bool nnz_allocated = (nnz_ == 0) || (jcols_ != nullptr && vals_ != nullptr);
   return size_allocated && nnz_allocated;
@@ -101,9 +105,9 @@ void MatrixCsr::allocate_size(int n)
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-
-  storage_allocated = storage_allocated || irows_ != nullptr;
-
+  if(execution_mode_ == ExecutionMode::CUDA || execution_mode_ == ExecutionMode::HIP) {
+    storage_allocated = storage_allocated || irows_ != nullptr;
+  }
 #endif
 
   if(storage_allocated) {
@@ -114,9 +118,9 @@ void MatrixCsr::allocate_size(int n)
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-
-  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&irows_), (n_ + 1) * sizeof(int)));
-
+  if(execution_mode_ == ExecutionMode::CUDA || execution_mode_ == ExecutionMode::HIP) {
+    checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&irows_), (n_ + 1) * sizeof(int)));
+  }
 #endif
 
   irows_host_ = new int[n_ + 1]{0};
@@ -128,21 +132,21 @@ void MatrixCsr::allocate_nnz(int nnz)
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-
-  storage_allocated = storage_allocated || jcols_ != nullptr || vals_ != nullptr;
-
+  if(execution_mode_ == ExecutionMode::CUDA || execution_mode_ == ExecutionMode::HIP) {
+    storage_allocated = storage_allocated || jcols_ != nullptr || vals_ != nullptr;
+  }
 #endif
 
   if(storage_allocated) {
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-
+  if(execution_mode_ == ExecutionMode::CUDA || execution_mode_ == ExecutionMode::HIP) {
     checkGpuErrors(evloserGpuFree(jcols_));
     checkGpuErrors(evloserGpuFree(vals_));
 
     jcols_ = nullptr;
     vals_ = nullptr;
-
+  }
 #endif
 
     delete[] jcols_host_;
@@ -161,10 +165,10 @@ void MatrixCsr::allocate_nnz(int nnz)
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-
-  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&jcols_), nnz_ * sizeof(int)));
-  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&vals_), nnz_ * sizeof(double)));
-
+  if(execution_mode_ == ExecutionMode::CUDA || execution_mode_ == ExecutionMode::HIP) {
+    checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&jcols_), nnz_ * sizeof(int)));
+    checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&vals_), nnz_ * sizeof(double)));
+  }
 #endif
 
   jcols_host_ = new int[nnz_]{0};
@@ -175,15 +179,15 @@ void MatrixCsr::clear_data()
 {
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+  if(execution_mode_ == ExecutionMode::CUDA || execution_mode_ == ExecutionMode::HIP) {
+    checkGpuErrors(evloserGpuFree(irows_));
+    checkGpuErrors(evloserGpuFree(jcols_));
+    checkGpuErrors(evloserGpuFree(vals_));
 
-  checkGpuErrors(evloserGpuFree(irows_));
-  checkGpuErrors(evloserGpuFree(jcols_));
-  checkGpuErrors(evloserGpuFree(vals_));
-
-  irows_ = nullptr;
-  jcols_ = nullptr;
-  vals_ = nullptr;
-
+    irows_ = nullptr;
+    jcols_ = nullptr;
+    vals_ = nullptr;
+  }
 #endif
 
   delete[] irows_host_;
@@ -202,6 +206,11 @@ void MatrixCsr::clear_data()
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 void MatrixCsr::update_from_host_mirror()
 {
+  if(execution_mode_ == ExecutionMode::CPU) {
+    assert(false && "Cannot update device storage in CPU execution mode.");
+    return;
+  }
+
   assert(has_device_storage());
   assert(has_host_mirror());
 
@@ -215,6 +224,11 @@ void MatrixCsr::update_from_host_mirror()
 
 void MatrixCsr::copy_to_host_mirror()
 {
+  if(execution_mode_ == ExecutionMode::CPU) {
+    assert(false && "Cannot copy from device storage in CPU execution mode.");
+    return;
+  }
+
   assert(has_device_storage());
   assert(has_host_mirror());
 

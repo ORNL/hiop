@@ -69,6 +69,7 @@
 #endif
 
 #include <algorithm>
+#include <cstdlib>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -97,7 +98,9 @@ __global__ void evloser_map_arrays_kernel(T* dst, const T* src, const I* mapidx,
     dst[tid] = src[mapidx[tid]];
   }
 }
+#endif
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
 /**
  * @brief Map elements of one array to the other
  *
@@ -116,13 +119,42 @@ __global__ void evloser_add_to_array_kernel(T* dst, const T* src, const I* mapid
     if(mapidx[tid] != -1) dst[mapidx[tid]] += src[nnz - n + tid];
   }
 }
-
 #endif
 
 namespace hiop
 {
+namespace
+{
+
+EVLOSER::ExecutionMode select_evloser_execution_mode(hiopNlpFormulation* nlp)
+{
+  const std::string mem_space = nlp->options->GetString("mem_space");
+
+  if(mem_space == "host" || mem_space == "default") {
+    return EVLOSER::ExecutionMode::CPU;
+  }
+
+  if(mem_space == "device") {
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+    return EVLOSER::ExecutionMode::CUDA;
+#elif defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+    return EVLOSER::ExecutionMode::HIP;
+#else
+    nlp->log->printf(hovError,
+                     "EVLOSER device execution was requested, but HiOp was not built with CUDA or HIP support.\n");
+    std::abort();
+#endif
+  }
+
+  nlp->log->printf(hovError, "Memory space %s is incompatible with EVLOSER.\n", mem_space.c_str());
+  std::abort();
+}
+
+}  // namespace
+
 hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const int& nnz, hiopNlpFormulation* nlp)
     : hiopLinSolverSymSparse(n, nnz, nlp),
+      execution_mode_{select_evloser_execution_mode(nlp)},
       solver_{nullptr},
       m_{n},
       n_{n},
@@ -138,10 +170,10 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       is_first_call_{true}
 {
   // Create embedded EVLOSER refactorization solver
-  solver_ = new EVLOSER::RefactorizationSolver(n);
+  solver_ = new EVLOSER::RefactorizationSolver(n, execution_mode_);
 
-  // If memory space is device, allocate host mirror for HiOp's KKT matrix in triplet format
-  if(nlp_->options->GetString("mem_space") == "device") {
+  // Device execution requires a host mirror for HiOp's KKT matrix.
+  if(execution_mode_ != EVLOSER::ExecutionMode::CPU) {
     M_host_ = LinearAlgebraFactory::create_matrix_sparse("default", n, n, nnz);
   }
 
@@ -186,94 +218,96 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
 
   // by default, dont use iterative refinement
   std::string use_ir{"no"};
-
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-  int maxit_test = nlp_->options->GetInteger("ir_inner_maxit");
+  if(execution_mode_ != EVLOSER::ExecutionMode::CPU) {
+    int maxit_test = nlp_->options->GetInteger("ir_inner_maxit");
 
-  if((maxit_test < 0) || (maxit_test > 1000)) {
-    nlp_->log->printf(hovWarning,
-                      "Wrong maxit value: %d. Use int maxit value between 0 and 1000. Setting default (50)  ...\n",
-                      maxit_test);
-    maxit_test = 50;
-  }
+
+    if((maxit_test < 0) || (maxit_test > 1000)) {
+      nlp_->log->printf(hovWarning,
+                        "Wrong maxit value: %d. Use int maxit value between 0 and 1000. Setting default (50)  ...\n",
+                        maxit_test);
+      maxit_test = 50;
+    }
 #if defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-  // EVLOSER iterative refinement currently depends on CUDA-only kernels.
-  // Keep the HIP path on RF only until the IR path is ported.
-  solver_->disable_iterative_refinement();
-#else
-  if(maxit_test > 0) {
-    use_ir = "yes";
-    solver_->enable_iterative_refinement();
-    solver_->ir()->maxit() = maxit_test;
-  } else {
+    // EVLOSER iterative refinement currently depends on CUDA-only kernels.
+    // Keep the HIP path on RF only until the IR path is ported.
     solver_->disable_iterative_refinement();
-  }
-#endif
-  if(use_ir == "yes") {
-    if((refact == "rf")) {
-      solver_->ir()->restart() = nlp_->options->GetInteger("ir_inner_restart");
-
-      if((solver_->ir()->restart() < 0) || (solver_->ir()->restart() > 100)) {
-        nlp_->log->printf(hovWarning,
-                          "Wrong restart value: %d. Use int restart value between 1 and 100. Setting default (20)  ...\n",
-                          solver_->ir()->restart());
-        solver_->ir()->restart() = 20;
-      }
-
-      solver_->ir()->tol() = nlp_->options->GetNumeric("ir_inner_tol");
-      if((solver_->ir()->tol() < 0) || (solver_->ir()->tol() > 1)) {
-        nlp_->log->printf(hovWarning,
-                          "Wrong tol value: %e. Use double tol value between 0 and 1. Setting default (1e-12)  ...\n",
-                          solver_->ir()->tol());
-        solver_->ir()->tol() = 1e-12;
-      }
-      solver_->ir()->orth_option() = nlp_->options->GetString("ir_inner_gs_scheme");
-
-      /* 0) "Standard" GMRES and FGMRES (Saad and Schultz, 1986, Saad, 1992) use Modified Gram-Schmidt ("mgs") to keep the
-       * Krylov vectors orthogonal. Modified Gram-Schmidt requires k synchronization (due to inner products) in iteration k
-       * and this becomes a scaling bottleneck for GPU-accelerated implementation and it becomes even more pronouced for
-       * MPI+GPU-acceleration. Modified Gram-Schidt can be replaced by a different scheme.
-       *
-       * 1) One can use Classical Gram-Schmidt ("cgs") which is numerically unstable or reorthogonalized Classical
-       * Gram-Schmidt ("cgs2"), which is numerically stable and requires 3 synchrnozations and each iteration.
-       * Reorthogonalized Classical Gram-Schmidt makes two passes of Classical Gram-Schmidt. And two passes are enough to get
-       * vectors orthogonal to machine precision (Bjorck 1967).
-       *
-       * 2) An alternative is a low-sych version (Swirydowicz and Thomas, 2020), which reformulates Modified Gram-Schmidt to
-       * be a (very small) triangular solve. It requires extra storage for the matrix used in triangular solve (kxk at
-       * iteration k), but only two sycnhronizations are needed per iteration. The inner producats are performed in bulk,
-       * which quarantees better GPU utilization. The second synchronization comes from normalizing the vector and can be
-       * eliminated if the norm is postponed to the next iteration, but also makes code more complicated. This is why we use
-       * two-synch method ("mgs_two_synch")
-       *
-       * 3) A recently submitted paper by Stephen Thomas (Thomas 202*) takes the triangular solve idea further and uses a
-       * different approximation for the inverse of a triangular matrix. It requires two (very small) triangular solves and
-       * two sychroniztions (if the norm is NOT delayed). It also guarantees that the vectors are orthogonal to the machine
-       * epsilon, as in cgs2. Since Stephen's paper is named "post modern GMRES", we call this Gram-Schmidt scheme "mgs_pm".
-       */
-      if(solver_->ir()->orth_option() != "mgs" && solver_->ir()->orth_option() != "cgs2" &&
-         solver_->ir()->orth_option() != "mgs_two_synch" && solver_->ir()->orth_option() != "mgs_pm") {
-        nlp_->log->printf(
-            hovWarning,
-            "mgs option : %s is wrong. Use 'mgs', 'cgs2', 'mgs_two_synch' or 'mgs_pm'. Switching to default (mgs) ...\n",
-            use_ir.c_str());
-        solver_->ir()->orth_option() = "mgs";
-      }
-
-      solver_->ir()->conv_cond() = nlp_->options->GetInteger("ir_inner_conv_cond");
-
-      if((solver_->ir()->conv_cond() < 0) || (solver_->ir()->conv_cond() > 2)) {
-        nlp_->log->printf(hovWarning,
-                          "Wrong IR convergence condition: %d. Use int value: 0, 1 or 2. Setting default (0)  ...\n",
-                          solver_->ir()->conv_cond());
-        solver_->ir()->conv_cond() = 0;
-      }
-
+  #else
+    if(maxit_test > 0) {
+      use_ir = "yes";
+      solver_->enable_iterative_refinement();
+      solver_->ir()->maxit() = maxit_test;
     } else {
-      nlp_->log->printf(hovWarning, "Currently, inner iterative refinement works ONLY with cuSolverRf ... \n");
-      use_ir = "no";
       solver_->disable_iterative_refinement();
+    }
+  #endif
+    if(use_ir == "yes") {
+      if((refact == "rf")) {
+        solver_->ir()->restart() = nlp_->options->GetInteger("ir_inner_restart");
+
+        if((solver_->ir()->restart() < 0) || (solver_->ir()->restart() > 100)) {
+          nlp_->log->printf(hovWarning,
+                            "Wrong restart value: %d. Use int restart value between 1 and 100. Setting default (20)  ...\n",
+                            solver_->ir()->restart());
+          solver_->ir()->restart() = 20;
+        }
+
+        solver_->ir()->tol() = nlp_->options->GetNumeric("ir_inner_tol");
+        if((solver_->ir()->tol() < 0) || (solver_->ir()->tol() > 1)) {
+          nlp_->log->printf(hovWarning,
+                            "Wrong tol value: %e. Use double tol value between 0 and 1. Setting default (1e-12)  ...\n",
+                            solver_->ir()->tol());
+          solver_->ir()->tol() = 1e-12;
+        }
+        solver_->ir()->orth_option() = nlp_->options->GetString("ir_inner_gs_scheme");
+
+        /* 0) "Standard" GMRES and FGMRES (Saad and Schultz, 1986, Saad, 1992) use Modified Gram-Schmidt ("mgs") to keep the
+        * Krylov vectors orthogonal. Modified Gram-Schmidt requires k synchronization (due to inner products) in iteration k
+        * and this becomes a scaling bottleneck for GPU-accelerated implementation and it becomes even more pronouced for
+        * MPI+GPU-acceleration. Modified Gram-Schidt can be replaced by a different scheme.
+        *
+        * 1) One can use Classical Gram-Schmidt ("cgs") which is numerically unstable or reorthogonalized Classical
+        * Gram-Schmidt ("cgs2"), which is numerically stable and requires 3 synchrnozations and each iteration.
+        * Reorthogonalized Classical Gram-Schmidt makes two passes of Classical Gram-Schmidt. And two passes are enough to get
+        * vectors orthogonal to machine precision (Bjorck 1967).
+        *
+        * 2) An alternative is a low-sych version (Swirydowicz and Thomas, 2020), which reformulates Modified Gram-Schmidt to
+        * be a (very small) triangular solve. It requires extra storage for the matrix used in triangular solve (kxk at
+        * iteration k), but only two sycnhronizations are needed per iteration. The inner producats are performed in bulk,
+        * which quarantees better GPU utilization. The second synchronization comes from normalizing the vector and can be
+        * eliminated if the norm is postponed to the next iteration, but also makes code more complicated. This is why we use
+        * two-synch method ("mgs_two_synch")
+        *
+        * 3) A recently submitted paper by Stephen Thomas (Thomas 202*) takes the triangular solve idea further and uses a
+        * different approximation for the inverse of a triangular matrix. It requires two (very small) triangular solves and
+        * two sychroniztions (if the norm is NOT delayed). It also guarantees that the vectors are orthogonal to the machine
+        * epsilon, as in cgs2. Since Stephen's paper is named "post modern GMRES", we call this Gram-Schmidt scheme "mgs_pm".
+        */
+        if(solver_->ir()->orth_option() != "mgs" && solver_->ir()->orth_option() != "cgs2" &&
+          solver_->ir()->orth_option() != "mgs_two_synch" && solver_->ir()->orth_option() != "mgs_pm") {
+          nlp_->log->printf(
+              hovWarning,
+              "mgs option : %s is wrong. Use 'mgs', 'cgs2', 'mgs_two_synch' or 'mgs_pm'. Switching to default (mgs) ...\n",
+              use_ir.c_str());
+          solver_->ir()->orth_option() = "mgs";
+        }
+
+        solver_->ir()->conv_cond() = nlp_->options->GetInteger("ir_inner_conv_cond");
+
+        if((solver_->ir()->conv_cond() < 0) || (solver_->ir()->conv_cond() > 2)) {
+          nlp_->log->printf(hovWarning,
+                            "Wrong IR convergence condition: %d. Use int value: 0, 1 or 2. Setting default (0)  ...\n",
+                            solver_->ir()->conv_cond());
+          solver_->ir()->conv_cond() = 0;
+        }
+
+      } else {
+        nlp_->log->printf(hovWarning, "Currently, inner iterative refinement works ONLY with cuSolverRf ... \n");
+        use_ir = "no";
+        solver_->disable_iterative_refinement();
+      }
     }
   }
 #endif
@@ -285,22 +319,20 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
 hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
 {
   delete solver_;
-
-  // If memory space is device, delete allocated host mirrors
-  if(nlp_->options->GetString("mem_space") == "device") {
-    delete M_host_;
-  }
+  delete M_host_;
+  M_host_ = nullptr;
 
   // Delete CSR <--> triplet mappings
   delete[] index_convert_CSR2Triplet_host_;
   delete[] index_convert_extra_Diag2CSR_host_;
-
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-
-  checkGpuErrors(evloserGpuFree(index_convert_CSR2Triplet_device_));
-  checkGpuErrors(evloserGpuFree(index_convert_extra_Diag2CSR_device_));
-
+  if(index_convert_CSR2Triplet_device_ != nullptr) {
+    checkGpuErrors(evloserGpuFree(index_convert_CSR2Triplet_device_));
+  }
+  if(index_convert_extra_Diag2CSR_device_ != nullptr) {
+    checkGpuErrors(evloserGpuFree(index_convert_extra_Diag2CSR_device_));
+  }
 #endif
 }
 
@@ -347,18 +379,15 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
 
   // Set IR tolerance
   double ir_tol = nlp_->options->GetNumeric("ir_inner_tol");
-
-  std::string mem_space = nlp_->options->GetString("mem_space");
   double* dx = x.local_data();
-
-  bool retval = solver_->triangular_solve(dx, ir_tol, mem_space);
+  bool retval = solver_->triangular_solve(dx, ir_tol);
   if(!retval) {
     nlp_->log->printf(hovError,  // catastrophic failure
                       "EVLOSER triangular solve failed\n");
   }
 
   nlp_->runStats.linsolv.tmTriuSolves.stop();
-  return true;
+  return retval;
 }
 
 void hiopLinSolverSymSparseEVLOSER::firstCall()
@@ -366,11 +395,10 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
   assert(n_ == M_->n() && M_->n() == M_->m());
   assert(n_ > 0);
 
-  // If the matrix is on device, copy it to the host mirror
-  std::string mem_space = nlp_->options->GetString("mem_space");
+  // Device execution requires a host copy for the initial KLU factorization.
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-  if(mem_space == "device") {
+  if(execution_mode_ != EVLOSER::ExecutionMode::CPU) {
     checkGpuErrors(
       evloserGpuMemcpy(M_host_->M(), M_->M(), sizeof(double) * M_->numberOfNonzeros(), evloserMemcpyDeviceToHost));
     checkGpuErrors(evloserGpuMemcpy(M_host_->i_row(),
@@ -382,13 +410,7 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
                                   sizeof(index_type) * M_->numberOfNonzeros(),
                                   evloserMemcpyDeviceToHost));
   }
-#else
-  if(mem_space == "device") {
-    nlp_->log->printf(hovError, "Device memory is unavailable in this EVLOSER build.\n");
-    return;
-  }
 #endif
-
   // Transfer triplet to CSR form
 
   // Allocate row pointers and compute number of nonzeros.
@@ -404,11 +426,13 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-  // Copy matrix to device
-  solver_->mat_A_csr()->update_from_host_mirror();
+  if(execution_mode_ != EVLOSER::ExecutionMode::CPU) {
+    // Copy matrix to device
+    solver_->mat_A_csr()->update_from_host_mirror();
 
-  if(solver_->use_ir() == "yes") {
-    solver_->setup_iterative_refinement_matrix(n_, nnz_);
+    if(solver_->use_ir() == "yes") {
+      solver_->setup_iterative_refinement_matrix(n_, nnz_);
+    }
   }
 #endif
   /*
@@ -426,62 +450,63 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
 /// M_->numberOfNonzeros() is number of zeros in symmetric triplet matrix
 void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 {
-  std::string mem_space = nlp_->options->GetString("mem_space");
-
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
-  if(mem_space == "device") {
+  if(execution_mode_ == EVLOSER::ExecutionMode::CUDA) {
     double* csr_vals = solver_->mat_A_csr()->device_vals();
     double* coo_vals = M_->M();
     int coo_nnz = M_->numberOfNonzeros();
 
     const int blocksize = 512;
     int gridsize = (nnz_ + blocksize - 1) / blocksize;
-    evloser_map_arrays_kernel<double, int><<<gridsize, blocksize>>>(csr_vals, coo_vals, index_convert_CSR2Triplet_device_, nnz_);
+    evloser_map_arrays_kernel<double, int>
+        <<<gridsize, blocksize>>>(csr_vals, coo_vals, index_convert_CSR2Triplet_device_, nnz_);
 
     gridsize = (n_ + blocksize - 1) / blocksize;
     evloser_add_to_array_kernel<double, int>
         <<<gridsize, blocksize>>>(csr_vals, coo_vals, index_convert_extra_Diag2CSR_device_, n_, coo_nnz);
 
     // If factorization was not successful, we need a copy of values on the host
-    if(factorizationSetupSucc_ == 0)
+    if(factorizationSetupSucc_ == 0) {
       checkGpuErrors(evloserGpuMemcpy(solver_->mat_A_csr()->host_vals(),
                                  solver_->mat_A_csr()->device_vals(),
                                  sizeof(double) * nnz_,
                                  evloserMemcpyDeviceToHost));
+
+    }
+
     return;
   }
 #endif
 
-  hiopMatrixSparse* matrix_source = M_;
-
+  hiopMatrixSparse* matrix = M_;
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-  if(mem_space == "device") {
-    checkGpuErrors(
-      evloserGpuMemcpy(M_host_->M(), M_->M(), sizeof(double) * M_->numberOfNonzeros(), evloserMemcpyDeviceToHost));
-    matrix_source = M_host_;
-  }
-#else
-  if(mem_space == "device") {
-    nlp_->log->printf(hovError, "Device memory is unavailable in this EVLOSER build.\n");
-    return;
+  if(execution_mode_ != EVLOSER::ExecutionMode::CPU) {
+    checkGpuErrors(evloserGpuMemcpy(M_host_->M(),
+                               M_->M(),
+                               sizeof(double) * M_->numberOfNonzeros(),
+                               evloserMemcpyDeviceToHost));
+    matrix = M_host_;
   }
 #endif
-
-  // KKT matrix is on the host
   double* vals = solver_->mat_A_csr()->host_vals();
-  // update matrix
-  for(int k = 0; k < nnz_; k++) {
-    vals[k] = matrix_source->M()[index_convert_CSR2Triplet_host_[k]];
+
+  for(int k = 0; k < nnz_; ++k) {
+    vals[k] = matrix->M()[index_convert_CSR2Triplet_host_[k]];
   }
-  for(int i = 0; i < n_; i++) {
-    if(index_convert_extra_Diag2CSR_host_[i] != -1)
-      vals[index_convert_extra_Diag2CSR_host_[i]] += matrix_source->M()[matrix_source->numberOfNonzeros() - n_ + i];
+
+  for(int i = 0; i < n_; ++i) {
+    if(index_convert_extra_Diag2CSR_host_[i] != -1) {
+      vals[index_convert_extra_Diag2CSR_host_[i]] +=
+          matrix->M()[matrix->numberOfNonzeros() - n_ + i];
+    }
   }
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-  solver_->mat_A_csr()->update_from_host_mirror();
+  if(execution_mode_ != EVLOSER::ExecutionMode::CPU) {
+    solver_->mat_A_csr()->update_from_host_mirror();
+  }
 #endif
 }
 
@@ -493,16 +518,10 @@ void hiopLinSolverSymSparseEVLOSER::compute_nnz()
   //
   int* row_ptr = solver_->mat_A_csr()->host_irows();
 
-  // If the data is on device, fetch it from the host mirror
-  hiopMatrixSparse* M_host = nullptr;
-  std::string mem_space = nlp_->options->GetString("mem_space");
-  if(mem_space == "host" || mem_space == "default") {
-    M_host = M_;
-  } else if(mem_space == "device") {
-    M_host = M_host_;
-  } else {
-    nlp_->log->printf(hovError, "Memory space %s incompatible with EVLOSER.\n", mem_space.c_str());
-  }
+  hiopMatrixSparse* M_host =
+      execution_mode_ == EVLOSER::ExecutionMode::CPU ? M_ : M_host_;
+
+  assert(M_host != nullptr);
 
   // off-diagonal part
   row_ptr[0] = 0;
@@ -528,16 +547,10 @@ void hiopLinSolverSymSparseEVLOSER::compute_nnz()
 /// @pre Data is either on the host or the host mirror is synced with the device
 void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 {
-  // If the data is on device, fetch it from the host mirror
-  hiopMatrixSparse* M_host = nullptr;
-  std::string mem_space = nlp_->options->GetString("mem_space");
-  if(mem_space == "host" || mem_space == "default") {
-    M_host = M_;
-  } else if(mem_space == "device") {
-    M_host = M_host_;
-  } else {
-    nlp_->log->printf(hovError, "Memory space %s incompatible with EVLOSER.\n", mem_space.c_str());
-  }
+  hiopMatrixSparse* M_host =
+      execution_mode_ == EVLOSER::ExecutionMode::CPU ? M_ : M_host_;
+
+  assert(M_host != nullptr);
 
   //
   // set correct col index and value
@@ -548,14 +561,14 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
   index_convert_CSR2Triplet_host_ = new int[nnz_];
   index_convert_extra_Diag2CSR_host_ = new int[n_];
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
-    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), nnz_ * sizeof(int)));
-  checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_extra_Diag2CSR_device_), n_ * sizeof(int)));
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+  if(execution_mode_ == EVLOSER::ExecutionMode::CUDA) {
+    checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), nnz_ * sizeof(int)));
+    checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_extra_Diag2CSR_device_), n_ * sizeof(int)));
+  }
 #endif
-
   int* nnz_each_row_tmp = new int[n_]{0};
-  int nnz_tmp{0}, rowID_tmp, colID_tmp;
+  int total_nnz_tmp{0}, nnz_tmp{0}, rowID_tmp, colID_tmp;
 
   for(int k = 0; k < n_; k++) {
     index_convert_extra_Diag2CSR_host_[k] = -1;
@@ -574,6 +587,7 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       index_convert_extra_Diag2CSR_host_[rowID_tmp] = nnz_tmp;
 
       nnz_each_row_tmp[rowID_tmp]++;
+      total_nnz_tmp++;
     } else {
       nnz_tmp = nnz_each_row_tmp[rowID_tmp] + row_ptr[rowID_tmp];
       col_idx[nnz_tmp] = colID_tmp;
@@ -587,6 +601,7 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
       nnz_each_row_tmp[rowID_tmp]++;
       nnz_each_row_tmp[colID_tmp]++;
+      total_nnz_tmp += 2;
     }
   }
   // correct the missing dia_gonal term
@@ -597,6 +612,7 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       col_idx[nnz_tmp] = i;
       vals[nnz_tmp] = M_host->M()[M_host->numberOfNonzeros() - n_ + i];
       index_convert_CSR2Triplet_host_[nnz_tmp] = M_host->numberOfNonzeros() - n_ + i;
+      total_nnz_tmp += 1;
 
       std::vector<int> ind_temp(row_ptr[i + 1] - row_ptr[i]);
       std::iota(ind_temp.begin(), ind_temp.end(), 0);
@@ -609,23 +625,24 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       std::sort(col_idx + row_ptr[i], col_idx + row_ptr[i + 1]);
     }
   }
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
-    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-  checkGpuErrors(evloserGpuMemcpy(index_convert_CSR2Triplet_device_,
-                             index_convert_CSR2Triplet_host_,
-                             nnz_ * sizeof(int),
-                             evloserMemcpyHostToDevice));
-  checkGpuErrors(evloserGpuMemcpy(index_convert_extra_Diag2CSR_device_,
-                             index_convert_extra_Diag2CSR_host_,
-                             n_ * sizeof(int),
-                             evloserMemcpyHostToDevice));
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+  if(execution_mode_ == EVLOSER::ExecutionMode::CUDA) {
+    checkGpuErrors(evloserGpuMemcpy(index_convert_CSR2Triplet_device_,
+                              index_convert_CSR2Triplet_host_,
+                              nnz_ * sizeof(int),
+                              evloserMemcpyHostToDevice));
+    checkGpuErrors(evloserGpuMemcpy(index_convert_extra_Diag2CSR_device_,
+                              index_convert_extra_Diag2CSR_host_,
+                              n_ * sizeof(int),
+                              evloserMemcpyHostToDevice));
+  }
 #endif
   delete[] nnz_each_row_tmp;
 }
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
     defined(HIOP_USE_HIP) || defined(HAVE_HIP)
-// Error checking utility for GPU backends
+// Error checking utility for CUDA
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>
 void hiopLinSolverSymSparseEVLOSER::hiopCheckGpuError(T result, const char* const file, int const line)
@@ -636,5 +653,4 @@ void hiopLinSolverSymSparseEVLOSER::hiopCheckGpuError(T result, const char* cons
   }
 }
 #endif
-
 }  // namespace hiop

@@ -57,6 +57,7 @@
 #pragma once
 
 #include "klu.h"
+#include "evloser_execution_mode.hpp"
 #include "evloser_gpu_defs.hpp"
 #include <string>
 
@@ -75,7 +76,7 @@ class RefactorizationSolver
 public:
   // constructor
   // RefactorizationSolver();
-  RefactorizationSolver(int n);
+  RefactorizationSolver(int n, ExecutionMode execution_mode);
   ~RefactorizationSolver();
 
 #if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
@@ -162,11 +163,13 @@ public:
    * @param tol
    * @return bool
    */
-  bool triangular_solve(double* dx, double tol, std::string memspace);
+  bool triangular_solve(double* dx, double tol);
 
 private:
   int n_{0};    ///< Size of the linear system
   int nnz_{0};  ///< Number of nonzeros in the system's matrix
+
+  const ExecutionMode execution_mode_;  ///< Selected CPU, CUDA, or HIP execution path
 
   MatrixCsr* mat_A_csr_{nullptr};     ///< System matrix in nonsymmetric CSR format
   IterativeRefinement* ir_{nullptr};  ///< Iterative refinement class
