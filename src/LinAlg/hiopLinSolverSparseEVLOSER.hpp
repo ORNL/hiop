@@ -119,18 +119,18 @@ protected:
   int* index_convert_CSR2Triplet_host_;
   int* index_convert_extra_Diag2CSR_host_;
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   // Mapping on the device
   int* index_convert_CSR2Triplet_device_;
   int* index_convert_extra_Diag2CSR_device_;
+#endif
 
   // Algorithm control flags
   int factorizationSetupSucc_;
   bool is_first_call_;
 
   hiopMatrixSparse* M_host_{nullptr};  ///< Host mirror for the KKT matrix
-
-  /* private function: creates a cuSolver data structure from KLU data
-   * structures. */
 
   /** called the very first time a matrix is factored. Perform KLU
    * factorization, allocate all aux variables
@@ -152,8 +152,11 @@ protected:
   /** Function to compute column indices and matrix values arrays */
   void set_csr_indices_values();
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   template<typename T>
   void hiopCheckGpuError(T result, const char* const file, int const line);
+#endif
 };
 
 }  // namespace hiop

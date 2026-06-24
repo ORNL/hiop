@@ -67,7 +67,7 @@ class MatrixCsr;
 class IterativeRefinement;
 
 /**
- * @brief Implements refactorization solvers using KLU and GPU sparse solver libraries
+ * @brief Implements refactorization solvers using KLU and optional GPU sparse solver libraries
  *
  */
 class RefactorizationSolver
@@ -77,6 +77,9 @@ public:
   // RefactorizationSolver();
   RefactorizationSolver(int n);
   ~RefactorizationSolver();
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 
   /// Enable allocation and use of iterative refinement.
   void enable_iterative_refinement();
@@ -98,6 +101,7 @@ public:
                                       int* d_Q,
                                       double* devx,
                                       double* devr);
+#endif
 
   /**
    * @brief Set the number of nonzeros in system matrix.
@@ -106,11 +110,13 @@ public:
    */
   void set_nnz(int nnz) { nnz_ = nnz; }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   IterativeRefinement* ir() { return ir_; }
+  double* devr() { return devr_; }
+#endif
 
   MatrixCsr* mat_A_csr() { return mat_A_csr_; }
-
-  double* devr() { return devr_; }
 
   int& ordering() { return ordering_; }
 
@@ -165,9 +171,12 @@ private:
   MatrixCsr* mat_A_csr_{nullptr};     ///< System matrix in nonsymmetric CSR format
   IterativeRefinement* ir_{nullptr};  ///< Iterative refinement class
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   bool cusolver_glu_enabled_{false};          ///< GLU refactorization enabled flag
   bool cusolver_rf_enabled_{false};           ///< Rf refactorization enabled flag
   bool iterative_refinement_enabled_{false};  ///< Iterative refinement on/off flag
+#endif
   bool is_first_solve_{true};                 ///< If it is first call to triangular solver
 
   // Options
@@ -177,6 +186,8 @@ private:
   std::string use_ir_;
   bool silent_output_{true};
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   /** needed for GPU sparse solver **/
 
   cusolverStatus_t sp_status_;
@@ -195,6 +206,7 @@ private:
   double* d_work_{nullptr};
   int ite_refine_succ_ = 0;
   double r_nrminf_{0.0};
+#endif
 
   // KLU stuff
   int klu_status_;
@@ -208,6 +220,8 @@ private:
   /* CPU data */
   double* hostx_ = nullptr;
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   /* for GPU data */
   double* devx_ = nullptr;
   double* devr_ = nullptr;
@@ -216,7 +230,10 @@ private:
   int* d_P_ = nullptr;
   int* d_Q_ = nullptr;  // permutation matrices
   double* d_T_ = nullptr;
+#endif
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   /**
    * @brief Function that computes M = (L-I) + U
    *
@@ -230,6 +247,7 @@ private:
    * @return int
    */
   int createM(const int n, const int nnzL, const int* Lp, const int* Li, const int nnzU, const int* Up, const int* Ui);
+#endif
 
   /// Validate the current CSR system matrix before solver setup or refactorization.
   bool validate_system_matrix(const char* caller) const;
@@ -238,6 +256,10 @@ private:
   bool validate_klu_factorization(const char* caller) const;
 
   int initializeKLU();
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+
   int initializeCusolverGLU();
   int initializeCusolverRf();
 
@@ -266,6 +288,7 @@ private:
    */
   template<typename T>
   void evloserCheckGpuError(T result, const char* const file, int const line);
+#endif
 };
 
 }  // namespace EVLOSER

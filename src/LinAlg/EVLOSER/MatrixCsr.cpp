@@ -63,7 +63,10 @@
 #include <iostream>
 #include <cassert>
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 #define checkGpuErrors(val) evloserCheckGpuError((val), __FILE__, __LINE__)
+#endif
 
 namespace EVLOSER
 {
@@ -75,12 +78,15 @@ MatrixCsr::~MatrixCsr()
   clear_data();
 }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 bool MatrixCsr::has_device_storage() const
 {
   const bool size_allocated = (n_ == 0) || (irows_ != nullptr);
   const bool nnz_allocated = (nnz_ == 0) || (jcols_ != nullptr && vals_ != nullptr);
   return size_allocated && nnz_allocated;
 }
+#endif
 
 bool MatrixCsr::has_host_mirror() const
 {
@@ -91,43 +97,85 @@ bool MatrixCsr::has_host_mirror() const
 
 void MatrixCsr::allocate_size(int n)
 {
-  if(irows_ != nullptr || irows_host_ != nullptr) {
+  bool storage_allocated = irows_host_ != nullptr;
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+
+  storage_allocated = storage_allocated || irows_ != nullptr;
+
+#endif
+
+  if(storage_allocated) {
     clear_data();
   }
 
   n_ = n;
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+
   checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&irows_), (n_ + 1) * sizeof(int)));
+
+#endif
+
   irows_host_ = new int[n_ + 1]{0};
 }
 
 void MatrixCsr::allocate_nnz(int nnz)
 {
-  if(jcols_ != nullptr || vals_ != nullptr || jcols_host_ != nullptr || vals_host_ != nullptr) {
+  bool storage_allocated = jcols_host_ != nullptr || vals_host_ != nullptr;
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+
+  storage_allocated = storage_allocated || jcols_ != nullptr || vals_ != nullptr;
+
+#endif
+
+  if(storage_allocated) {
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+
     checkGpuErrors(evloserGpuFree(jcols_));
     checkGpuErrors(evloserGpuFree(vals_));
-    delete[] jcols_host_;
-    delete[] vals_host_;
 
     jcols_ = nullptr;
     vals_ = nullptr;
+
+#endif
+
+    delete[] jcols_host_;
+    delete[] vals_host_;
+
     jcols_host_ = nullptr;
     vals_host_ = nullptr;
     nnz_ = 0;
   }
 
   nnz_ = nnz;
+
   if(nnz_ == 0) {
     return;
   }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+
   checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&jcols_), nnz_ * sizeof(int)));
   checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&vals_), nnz_ * sizeof(double)));
+
+#endif
+
   jcols_host_ = new int[nnz_]{0};
   vals_host_ = new double[nnz_]{0};
 }
 
 void MatrixCsr::clear_data()
 {
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+
   checkGpuErrors(evloserGpuFree(irows_));
   checkGpuErrors(evloserGpuFree(jcols_));
   checkGpuErrors(evloserGpuFree(vals_));
@@ -135,6 +183,8 @@ void MatrixCsr::clear_data()
   irows_ = nullptr;
   jcols_ = nullptr;
   vals_ = nullptr;
+
+#endif
 
   delete[] irows_host_;
   delete[] jcols_host_;
@@ -148,6 +198,8 @@ void MatrixCsr::clear_data()
   nnz_ = 0;
 }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 void MatrixCsr::update_from_host_mirror()
 {
   assert(has_device_storage());
@@ -173,6 +225,7 @@ void MatrixCsr::copy_to_host_mirror()
     checkGpuErrors(evloserGpuMemcpy(vals_host_, vals_, sizeof(double) * nnz_, evloserMemcpyDeviceToHost));
   }
 }
+#endif
 
 bool MatrixCsr::validate_host_structure(const char* caller, bool silent_output) const
 {
@@ -232,6 +285,8 @@ bool MatrixCsr::validate_host_structure(const char* caller, bool silent_output) 
   return true;
 }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 // Error checking utility for GPU backend
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>
@@ -242,5 +297,5 @@ void MatrixCsr::evloserCheckGpuError(T result, const char* const file, int const
     assert(false);
   }
 }
-
+#endif
 }  // namespace EVLOSER

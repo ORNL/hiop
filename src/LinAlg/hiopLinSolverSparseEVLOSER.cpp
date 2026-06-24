@@ -56,8 +56,11 @@
 #include "hiopLinSolverSparseEVLOSER.hpp"
 #include "EVLOSER/RefactorizationSolver.hpp"
 #include "EVLOSER/MatrixCsr.hpp"
-#include "EVLOSER/IterativeRefinement.hpp"
 #include "EVLOSER/evloser_gpu_defs.hpp"
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#include "EVLOSER/IterativeRefinement.hpp"
+#endif
 
 #include "hiop_blasdefs.hpp"
 
@@ -71,8 +74,12 @@
 #include <string>
 #include <vector>
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 #define checkGpuErrors(val) hiopCheckGpuError((val), __FILE__, __LINE__)
+#endif
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
 /**
  * @brief Map elements of one array to the other
  *
@@ -110,17 +117,23 @@ __global__ void evloser_add_to_array_kernel(T* dst, const T* src, const I* mapid
   }
 }
 
+#endif
+
 namespace hiop
 {
 hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const int& nnz, hiopNlpFormulation* nlp)
     : hiopLinSolverSymSparse(n, nnz, nlp),
-      index_convert_CSR2Triplet_host_{nullptr},
-      index_convert_extra_Diag2CSR_host_{nullptr},
-      index_convert_CSR2Triplet_device_{nullptr},
-      index_convert_extra_Diag2CSR_device_{nullptr},
+      solver_{nullptr},
       m_{n},
       n_{n},
       nnz_{0},
+      index_convert_CSR2Triplet_host_{nullptr},
+      index_convert_extra_Diag2CSR_host_{nullptr},
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+      index_convert_CSR2Triplet_device_{nullptr},
+      index_convert_extra_Diag2CSR_device_{nullptr},
+#endif
       factorizationSetupSucc_{0},
       is_first_call_{true}
 {
@@ -172,7 +185,10 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   nlp_->log->printf(hovSummary, "Refactorization: %s\n", solver_->refact().c_str());
 
   // by default, dont use iterative refinement
-  std::string use_ir;
+  std::string use_ir{"no"};
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   int maxit_test = nlp_->options->GetInteger("ir_inner_maxit");
 
   if((maxit_test < 0) || (maxit_test > 1000)) {
@@ -181,7 +197,6 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
                       maxit_test);
     maxit_test = 50;
   }
-  use_ir = "no";
 #if defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   // EVLOSER iterative refinement currently depends on CUDA-only kernels.
   // Keep the HIP path on RF only until the IR path is ported.
@@ -261,6 +276,8 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       solver_->disable_iterative_refinement();
     }
   }
+#endif
+
   solver_->use_ir() = use_ir;
   nlp_->log->printf(hovSummary, "Use IR: %s\n", solver_->use_ir().c_str());
 }  // constructor
@@ -277,8 +294,14 @@ hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
   // Delete CSR <--> triplet mappings
   delete[] index_convert_CSR2Triplet_host_;
   delete[] index_convert_extra_Diag2CSR_host_;
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+
   checkGpuErrors(evloserGpuFree(index_convert_CSR2Triplet_device_));
   checkGpuErrors(evloserGpuFree(index_convert_extra_Diag2CSR_device_));
+
+#endif
 }
 
 int hiopLinSolverSymSparseEVLOSER::matrixChanged()
@@ -345,6 +368,8 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
 
   // If the matrix is on device, copy it to the host mirror
   std::string mem_space = nlp_->options->GetString("mem_space");
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   if(mem_space == "device") {
     checkGpuErrors(
       evloserGpuMemcpy(M_host_->M(), M_->M(), sizeof(double) * M_->numberOfNonzeros(), evloserMemcpyDeviceToHost));
@@ -357,6 +382,12 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
                                   sizeof(index_type) * M_->numberOfNonzeros(),
                                   evloserMemcpyDeviceToHost));
   }
+#else
+  if(mem_space == "device") {
+    nlp_->log->printf(hovError, "Device memory is unavailable in this EVLOSER build.\n");
+    return;
+  }
+#endif
 
   // Transfer triplet to CSR form
 
@@ -371,12 +402,15 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
   // Set column indices and matrix values.
   set_csr_indices_values();
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   // Copy matrix to device
   solver_->mat_A_csr()->update_from_host_mirror();
 
   if(solver_->use_ir() == "yes") {
     solver_->setup_iterative_refinement_matrix(n_, nnz_);
   }
+#endif
   /*
    * initialize matrix factorization
    */
@@ -393,6 +427,8 @@ void hiopLinSolverSymSparseEVLOSER::firstCall()
 void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 {
   std::string mem_space = nlp_->options->GetString("mem_space");
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
   if(mem_space == "device") {
     double* csr_vals = solver_->mat_A_csr()->device_vals();
     double* coo_vals = M_->M();
@@ -412,23 +448,41 @@ void hiopLinSolverSymSparseEVLOSER::update_matrix_values()
                                  solver_->mat_A_csr()->device_vals(),
                                  sizeof(double) * nnz_,
                                  evloserMemcpyDeviceToHost));
-
-  } else {
-    // KKT matrix is on the host
-    double* vals = solver_->mat_A_csr()->host_vals();
-    // update matrix
-    for(int k = 0; k < nnz_; k++) {
-      vals[k] = M_->M()[index_convert_CSR2Triplet_host_[k]];
-    }
-    for(int i = 0; i < n_; i++) {
-      if(index_convert_extra_Diag2CSR_host_[i] != -1)
-        vals[index_convert_extra_Diag2CSR_host_[i]] += M_->M()[M_->numberOfNonzeros() - n_ + i];
-    }
-    checkGpuErrors(evloserGpuMemcpy(solver_->mat_A_csr()->device_vals(),
-                               solver_->mat_A_csr()->host_vals(),
-                               sizeof(double) * nnz_,
-                               evloserMemcpyHostToDevice));
+    return;
   }
+#endif
+
+  hiopMatrixSparse* matrix_source = M_;
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+  if(mem_space == "device") {
+    checkGpuErrors(
+      evloserGpuMemcpy(M_host_->M(), M_->M(), sizeof(double) * M_->numberOfNonzeros(), evloserMemcpyDeviceToHost));
+    matrix_source = M_host_;
+  }
+#else
+  if(mem_space == "device") {
+    nlp_->log->printf(hovError, "Device memory is unavailable in this EVLOSER build.\n");
+    return;
+  }
+#endif
+
+  // KKT matrix is on the host
+  double* vals = solver_->mat_A_csr()->host_vals();
+  // update matrix
+  for(int k = 0; k < nnz_; k++) {
+    vals[k] = matrix_source->M()[index_convert_CSR2Triplet_host_[k]];
+  }
+  for(int i = 0; i < n_; i++) {
+    if(index_convert_extra_Diag2CSR_host_[i] != -1)
+      vals[index_convert_extra_Diag2CSR_host_[i]] += matrix_source->M()[matrix_source->numberOfNonzeros() - n_ + i];
+  }
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+  solver_->mat_A_csr()->update_from_host_mirror();
+#endif
 }
 
 /// @pre Data is either on the host or the host mirror is synced with the device
@@ -494,11 +548,14 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
   index_convert_CSR2Triplet_host_ = new int[nnz_];
   index_convert_extra_Diag2CSR_host_ = new int[n_];
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), nnz_ * sizeof(int)));
   checkGpuErrors(evloserGpuMalloc(reinterpret_cast<void**>(&index_convert_extra_Diag2CSR_device_), n_ * sizeof(int)));
+#endif
 
   int* nnz_each_row_tmp = new int[n_]{0};
-  int total_nnz_tmp{0}, nnz_tmp{0}, rowID_tmp, colID_tmp;
+  int nnz_tmp{0}, rowID_tmp, colID_tmp;
 
   for(int k = 0; k < n_; k++) {
     index_convert_extra_Diag2CSR_host_[k] = -1;
@@ -517,7 +574,6 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       index_convert_extra_Diag2CSR_host_[rowID_tmp] = nnz_tmp;
 
       nnz_each_row_tmp[rowID_tmp]++;
-      total_nnz_tmp++;
     } else {
       nnz_tmp = nnz_each_row_tmp[rowID_tmp] + row_ptr[rowID_tmp];
       col_idx[nnz_tmp] = colID_tmp;
@@ -531,7 +587,6 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
       nnz_each_row_tmp[rowID_tmp]++;
       nnz_each_row_tmp[colID_tmp]++;
-      total_nnz_tmp += 2;
     }
   }
   // correct the missing dia_gonal term
@@ -542,7 +597,6 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       col_idx[nnz_tmp] = i;
       vals[nnz_tmp] = M_host->M()[M_host->numberOfNonzeros() - n_ + i];
       index_convert_CSR2Triplet_host_[nnz_tmp] = M_host->numberOfNonzeros() - n_ + i;
-      total_nnz_tmp += 1;
 
       std::vector<int> ind_temp(row_ptr[i + 1] - row_ptr[i]);
       std::iota(ind_temp.begin(), ind_temp.end(), 0);
@@ -555,6 +609,8 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       std::sort(col_idx + row_ptr[i], col_idx + row_ptr[i + 1]);
     }
   }
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   checkGpuErrors(evloserGpuMemcpy(index_convert_CSR2Triplet_device_,
                              index_convert_CSR2Triplet_host_,
                              nnz_ * sizeof(int),
@@ -563,18 +619,22 @@ void hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
                              index_convert_extra_Diag2CSR_host_,
                              n_ * sizeof(int),
                              evloserMemcpyHostToDevice));
+#endif
   delete[] nnz_each_row_tmp;
 }
 
-// Error checking utility for CUDA
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+// Error checking utility for GPU backends
 // KS: might later become part of src/Utils, putting it here for now
 template<typename T>
 void hiopLinSolverSymSparseEVLOSER::hiopCheckGpuError(T result, const char* const file, int const line)
 {
   if(result) {
-    nlp_->log->printf(hovError, "CUDA error at %s:%d, error# %d\n", file, line, result);
+    nlp_->log->printf(hovError, "GPU error at %s:%d, error# %d\n", file, line, result);
     assert(false);
   }
 }
+#endif
 
 }  // namespace hiop

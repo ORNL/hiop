@@ -24,8 +24,11 @@ public:
   /// Return the number of stored nonzeros.
   int nnz() const { return nnz_; }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   /// Return true when the required device CSR arrays have been allocated.
   bool has_device_storage() const;
+#endif
 
   /// Return true when the required host CSR mirror arrays have been allocated.
   bool has_host_mirror() const;
@@ -41,6 +44,8 @@ public:
    */
   bool validate_host_structure(const char* caller, bool silent_output) const;
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   /// Return device row-pointer storage.
   int* device_irows() { return irows_; }
 
@@ -58,6 +63,7 @@ public:
 
   /// Return const device value storage.
   const double* device_vals() const { return vals_; }
+#endif
 
   /// Return host row-pointer mirror storage.
   int* host_irows() { return irows_host_; }
@@ -77,24 +83,32 @@ public:
   /// Return const host value mirror storage.
   const double* host_vals() const { return vals_host_; }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   /// Copy host-side CSR arrays into device storage.
   void update_from_host_mirror();
 
   /// Copy device CSR arrays into the host mirror.
   void copy_to_host_mirror();
+#endif
 
 private:
   int n_{0};
   int nnz_{0};
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   int* irows_{nullptr};
   int* jcols_{nullptr};
   double* vals_{nullptr};
+#endif
 
   int* irows_host_{nullptr};
   int* jcols_host_{nullptr};
   double* vals_host_{nullptr};
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   /**
    * @brief Check for GPU backend errors.
    *
@@ -105,6 +119,7 @@ private:
    */
   template<typename T>
   void evloserCheckGpuError(T result, const char* const file, int const line);
+#endif
 };
 
 }  // namespace EVLOSER

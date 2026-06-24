@@ -1,7 +1,7 @@
 /**
  * @file evloser_gpu_defs.hpp
  *
- * Selects CUDA or HIP GPU backend definitions for EVLOSER.
+ * Selects CUDA, HIP or CPU backend definitions for EVLOSER.
  *
  */
 
@@ -18,7 +18,7 @@
 
 #else
 
-#error "EVLOSER GPU backend requires either HIOP_USE_CUDA or HIOP_USE_HIP."
+#include "evloser_cpu_defs.hpp"
 
 #endif
 

@@ -57,11 +57,11 @@
 #ifdef HIOP_USE_PARDISO
 #include "hiopLinSolverSparsePARDISO.hpp"
 #endif
-#ifdef HIOP_USE_RESOLVE
-// ReSolve is still CUDA-only; EVLOSER below covers the HIP-capable sparse solver path.
 #if defined(HIOP_USE_RESOLVE) && defined(HIOP_USE_CUDA)
 #include "hiopLinSolverSparseReSolve.hpp"
 #endif
+
+#ifdef HIOP_USE_EVLOSER
 #include "hiopLinSolverSparseEVLOSER.hpp"
 #endif
 #ifdef HIOP_USE_GINKGO
@@ -385,7 +385,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXYcYd::determineAndCreateLi
 
       // EVLOSER has its own solver object but uses this same sparse KKT selection point.
       if(nullptr == linSys_ && linear_solver == "evloser") {
-#if defined(HIOP_USE_RESOLVE)
+#if defined(HIOP_USE_EVLOSER)
         linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
         linsol_actual = "EVLOSER";
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
@@ -785,7 +785,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
 
       // EVLOSER has its own solver object but uses this same sparse KKT selection point.
       if(nullptr == linSys_ && linear_solver == "evloser") {
-#if defined(HIOP_USE_RESOLVE)
+#if defined(HIOP_USE_EVLOSER)
         actual_lin_solver = "EVLOSER";
         linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
@@ -876,7 +876,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
 
       // EVLOSER has its own solver object but uses this same sparse KKT selection point.
       if(nullptr == linSys_ && linear_solver == "evloser") {
-#if defined(HIOP_USE_RESOLVE)
+#if defined(HIOP_USE_EVLOSER)
         linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
         nlp_->log->printf(hovScalars, "KKT_SPARSE_XDYcYd linsys: alloc EVLOSER size %d (%d cons) (gpu)\n", n, neq + nineq);
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);

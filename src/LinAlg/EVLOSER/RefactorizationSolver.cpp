@@ -54,8 +54,12 @@
  */
 
 #include "MatrixCsr.hpp"
-#include "IterativeRefinement.hpp"
 #include "RefactorizationSolver.hpp"
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#include "IterativeRefinement.hpp"
+#endif
 
 #include "klu.h"
 #include <cassert>
@@ -64,11 +68,15 @@
 #include <vector>
 #include <iostream>
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 #define checkGpuErrors(val) evloserCheckGpuError((val), __FILE__, __LINE__)
+#endif
 
 namespace EVLOSER
 {
-
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 namespace
 {
 
@@ -259,12 +267,13 @@ bool validate_host_csr_factor(const char* name, int n, int nnz, const HostCsrFac
 }
 
 }  // namespace
-
+#endif
 RefactorizationSolver::RefactorizationSolver(int n)
     : n_(n)
 {
   mat_A_csr_ = new MatrixCsr();
-
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   // handles
   cusparseCreate(&handle_);
   cusolverSpCreate(&handle_cusolver_);
@@ -274,20 +283,28 @@ RefactorizationSolver::RefactorizationSolver(int n)
   cusparseCreateMatDescr(&descr_A_);
   cusparseSetMatType(descr_A_, CUSPARSE_MATRIX_TYPE_GENERAL);
   cusparseSetMatIndexBase(descr_A_, CUSPARSE_INDEX_BASE_ZERO);
+#endif
 
   // Allocate host mirror for the solution vector
   hostx_ = new double[n_];
-
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   // Allocate solution and rhs vectors
   checkGpuErrors(evloserGpuMalloc((void**)&devx_, n_ * sizeof(double)));
   checkGpuErrors(evloserGpuMalloc((void**)&devr_, n_ * sizeof(double)));
+#endif
 }
 
 RefactorizationSolver::~RefactorizationSolver()
 {
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   delete ir_;
+#endif
   delete mat_A_csr_;
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   // Delete workspaces and handles
   if(d_work_ != nullptr) {
     (void)evloserGpuFree(d_work_);
@@ -296,10 +313,13 @@ RefactorizationSolver::~RefactorizationSolver()
   cusolverSpDestroy(handle_cusolver_);
   cublasDestroy(handle_cublas_);
   cusparseDestroyMatDescr(descr_A_);
+#endif
 
   // Delete host mirror for the solution vector
   delete[] hostx_;
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   // Delete residual and solution vectors
   if(devr_ != nullptr) {
     (void)evloserGpuFree(devr_);
@@ -325,13 +345,15 @@ RefactorizationSolver::~RefactorizationSolver()
       (void)evloserGpuFree(d_T_);
     }
   }
-
+#endif
   klu_free_symbolic(&Symbolic_, &Common_);
   klu_free_numeric(&Numeric_, &Common_);
   delete[] mia_;
   delete[] mja_;
 }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 void RefactorizationSolver::enable_iterative_refinement()
 {
   if(ir_ == nullptr) {
@@ -381,6 +403,7 @@ void RefactorizationSolver::configure_iterative_refinement(cusparseHandle_t cusp
 
   ir_->setup(cusparse_handle, cublas_handle, cusolverrf_handle, n, d_T, d_P, d_Q, devx, devr);
 }
+#endif
 
 bool RefactorizationSolver::validate_system_matrix(const char* caller) const
 {
@@ -437,6 +460,8 @@ bool RefactorizationSolver::validate_klu_factorization(const char* caller) const
   return true;
 }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 bool RefactorizationSolver::checkEvloserRfStatus(evloserRfStatus_t status, const char* caller) const
 {
   if(status == evloserRfSuccess) {
@@ -480,6 +505,7 @@ int RefactorizationSolver::refactorizeEvloserRf(const char* caller)
   sp_status_ = evloserRfRefactor(handle_rf_);
   return checkEvloserRfStatus(sp_status_, caller) ? 0 : -1;
 }
+#endif
 
 int RefactorizationSolver::setup_factorization()
 {
@@ -524,6 +550,8 @@ void RefactorizationSolver::setup_refactorization()
     return;
   }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   if(refact_ == "glu") {
     if(initializeCusolverGLU() != 0) {
       return;
@@ -543,6 +571,13 @@ void RefactorizationSolver::setup_refactorization()
   } else {  // for future -
     assert(0 && "Only glu and rf refactorizations available.\n");
   }
+#else
+
+  if(!silent_output_) {
+    std::cout << "[EVLOSER] GPU refactorization is unavailable in this build.\n";
+  }
+
+#endif
 }
 
 int RefactorizationSolver::refactorize()
@@ -551,6 +586,8 @@ int RefactorizationSolver::refactorize()
     return -1;
   }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   if(refact_ == "glu") {
     sp_status_ = cusolverSpDgluReset(handle_cusolver_,
                                      n_,
@@ -573,10 +610,21 @@ int RefactorizationSolver::refactorize()
     }
   }
   return 0;
+#else
+
+  if(!silent_output_) {
+    std::cout << "[EVLOSER] GPU refactorization is unavailable in this build.\n";
+  }
+
+  return -1;
+
+#endif
 }
 
 bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string memspace)
 {
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
   if(refact_ == "glu") {
     double* devx = nullptr;
     if(memspace == "device") {
@@ -622,7 +670,7 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
       } else {
         hostx = dx;
       }
-      int ok = klu_solve(Symbolic_, Numeric_, n_, 1, hostx, &Common_);  // replace dx with hostx
+      (void)klu_solve(Symbolic_, Numeric_, n_, 1, hostx, &Common_);  // replace dx with hostx
       klu_free_numeric(&Numeric_, &Common_);
       klu_free_symbolic(&Symbolic_, &Common_);
       is_first_solve_ = false;
@@ -684,8 +732,24 @@ bool RefactorizationSolver::triangular_solve(double* dx, double tol, std::string
     std::cout << "Unknown refactorization " << refact_ << ", exiting\n";
   }
   return false;
+#else
+
+  (void)dx;
+  (void)tol;
+  (void)memspace;
+
+  if(!silent_output_) {
+    std::cout << "[EVLOSER] GPU triangular solve is unavailable in this build.\n";
+  }
+
+  return false;
+
+#endif
 }
 
+
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 // helper private function needed for format conversion
 int RefactorizationSolver::createM(const int n,
                                    const int /* nnzL */,
@@ -737,6 +801,7 @@ int RefactorizationSolver::createM(const int n,
   }
   return 0;
 }
+#endif
 
 int RefactorizationSolver::initializeKLU()
 {
@@ -753,6 +818,8 @@ int RefactorizationSolver::initializeKLU()
   return 0;
 }
 
+#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || \
+    defined(HIOP_USE_HIP) || defined(HAVE_HIP)
 int RefactorizationSolver::initializeCusolverGLU()
 {
 #if defined(HIOP_USE_HIP) || defined(HAVE_HIP)
@@ -846,7 +913,7 @@ int RefactorizationSolver::refactorizationSetupCusolverGLU()
 
   double* Ux = new double[nnzU];
 
-  int ok = klu_extract(Numeric_,
+  (void)klu_extract(Numeric_,
                        Symbolic_,
                        Lp,
                        Li,
@@ -981,5 +1048,5 @@ void RefactorizationSolver::evloserCheckGpuError(T result, const char* const fil
     assert(false);
   }
 }
-
+#endif
 }  // namespace EVLOSER

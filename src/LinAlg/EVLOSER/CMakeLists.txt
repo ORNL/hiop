@@ -10,7 +10,6 @@ if(HIOP_USE_CUDA)
     IterativeRefinement.cpp
     KrylovSolverKernels.cu
   )
-  set_source_files_properties(${EVLOSER_SRC} PROPERTIES LANGUAGE CUDA)
 endif()
 
 add_library(EVLOSER STATIC ${EVLOSER_SRC})

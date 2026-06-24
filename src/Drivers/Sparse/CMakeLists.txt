@@ -18,7 +18,7 @@ add_executable(NlpSparseEx4.exe NlpSparseEx4.cpp NlpSparseEx4Driver.cpp)
 target_link_libraries(NlpSparseEx4.exe HiOp::HiOp)
 
 # This driver used to be CUDA/ReSolve-only; EVLOSER adds the HIP path here too.
-if(HIOP_USE_RAJA AND HIOP_USE_GPU AND HIOP_USE_RESOLVE)
+if(HIOP_USE_RAJA AND HIOP_USE_GPU AND (HIOP_USE_RESOLVE OR HIOP_USE_EVLOSER))
   if(HIOP_USE_CUDA OR HIOP_USE_HIP)
     if(HIOP_USE_CUDA)
       set_source_files_properties(
@@ -60,7 +60,7 @@ if(HIOP_USE_CUDA)
   add_test(NAME NlpSparse1_3 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx1.exe>" "500" "-cusolver" "-selfcheck")
 endif(HIOP_USE_CUDA)
 # EVLOSER uses the existing SparseEx1 driver and selects the EVLOSER solver option.
-if(HIOP_USE_CUDA AND HIOP_USE_RESOLVE)
+if(HIOP_USE_CUDA AND HIOP_USE_EVLOSER)
   add_test(NAME NlpSparse1_EVLOSER COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx1.exe>" "500" "-evloser" "-selfcheck")
 endif()
 if(HIOP_USE_PARDISO)
@@ -81,7 +81,7 @@ if(HIOP_USE_CUDA)
   add_test(NAME NlpSparse2_3 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "500" "-cusolver" "-inertiafree" "-selfcheck")
 endif(HIOP_USE_CUDA)
 # EVLOSER uses the existing SparseEx2 driver with the required inertia-free path.
-if(HIOP_USE_CUDA AND HIOP_USE_RESOLVE)
+if(HIOP_USE_CUDA AND HIOP_USE_EVLOSER)
   add_test(NAME NlpSparse2_EVLOSER COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "500" "-evloser" "-inertiafree" "-selfcheck")
 endif()
 if(HIOP_USE_GINKGO)
@@ -97,12 +97,15 @@ endif(HIOP_USE_GINKGO)
 if(HIOP_USE_RAJA AND HIOP_USE_GPU AND HIOP_USE_CUDA AND HIOP_USE_RESOLVE)
   add_test(NAME NlpSparseRaja2_1 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-resolve_cuda_glu")
   add_test(NAME NlpSparseRaja2_2 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-resolve_cuda_rf")
-  # CUDA EVLOSER RF uses the same RAJA sparse driver as the ReSolve RF test.
+endif()
+
+# CUDA EVLOSER RF uses the same RAJA sparse driver as the ReSolve RF test.
+if(HIOP_USE_RAJA AND HIOP_USE_GPU AND HIOP_USE_CUDA AND HIOP_USE_EVLOSER)
   add_test(NAME NlpSparseRaja2_3 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-evloser_cuda_rf")
 endif()
 
 # HIP EVLOSER RF needs a separate test guard because ReSolve remains CUDA-only.
-if(HIOP_USE_RAJA AND HIOP_USE_GPU AND HIOP_USE_HIP AND HIOP_USE_RESOLVE)
+if(HIOP_USE_RAJA AND HIOP_USE_GPU AND HIOP_USE_HIP AND HIOP_USE_EVLOSER)
   add_test(NAME NlpSparseRaja2_4 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-evloser_hip_rf")
 endif()
 
