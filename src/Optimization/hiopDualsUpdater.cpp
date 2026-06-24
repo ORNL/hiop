@@ -379,6 +379,20 @@ bool hiopDualsLsqUpdateLinsysAugSparse::instantiate_linear_solver(const char* li
       // compute mode CPU
       /////////////////////////////////////////////////////////////////////////////////////////
       assert(nullptr == lin_sys_);
+#ifdef HIOP_USE_EVLOSER
+      if(linear_solver == "evloser") {
+        if(fact_acceptor == "inertia_correction") {
+          nlp_->log->printf(hovError,
+                            "LSQ linear solver with EVLOSER does not support inertia correction. "
+                            "Please set option 'fact_acceptor' to 'inertia_free'.\n");
+          assert(false);
+          return false;
+        }
+
+        ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: EVLOSER on CPU ";
+        lin_sys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
+      }
+#endif  // HIOP_USE_EVLOSER
       if(linear_solver == "ma57" || linear_solver == "auto") {
 #ifdef HIOP_USE_COINHSL
         ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: MA57 ";

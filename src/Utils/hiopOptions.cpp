@@ -928,7 +928,7 @@ void hiopOptionsNLP::register_options()
     register_str_option("linear_solver_sparse",
                         "auto",
                         range,
-                        "Selects among MA57, PARDISO, STRUMPACK, cuSOLVER's Cholesky or LU, and GINKGO for the "
+                        "Selects among MA57, PARDISO, STRUMPACK, ReSolve, EVLOSER, cuSOLVER's Cholesky or LU, and GINKGO for the "
                         "sparse linear solves.");
   }
 
@@ -943,7 +943,7 @@ void hiopOptionsNLP::register_options()
     register_str_option("duals_init_linear_solver_sparse",
                         "auto",
                         range,
-                        "Selects among MA57, PARDISO, cuSOLVER, STRUMPACK, and GINKGO for the sparse linear solves.");
+                        "Selects among MA57, PARDISO, ReSolve, EVLOSER, cuSOLVER, STRUMPACK, and GINKGO for the sparse linear solves.");
   }
 
   // choose hardware backend for the Ginkgo solver to run on.
@@ -1404,7 +1404,6 @@ void hiopOptionsNLP::ensure_consistence()
   auto kkt_linsys = GetString("KKTLinsys");
   auto sol_sp = GetString("linear_solver_sparse");
   if(kkt_linsys == "full") {
-    // Full sparse KKT accepts EVLOSER through the same sparse solver selection path as ReSolve.
     if(sol_sp != "resolve" && sol_sp != "evloser" && sol_sp != "pardiso" && sol_sp != "strumpack" && sol_sp != "auto") {
       if(is_user_defined("linear_solver_sparse")) {
         log_printf(hovWarning,
@@ -1428,18 +1427,29 @@ void hiopOptionsNLP::ensure_consistence()
     }
   }
 
-// EVLOSER can use CUDA or HIP, unlike the CUDA-only ReSolve path below.
-#if !defined(HIOP_USE_CUDA) && !defined(HIOP_USE_HIP)
+
+#ifndef HIOP_USE_EVLOSER
   if(sol_sp == "evloser") {
     if(is_user_defined("linear_solver_sparse")) {
       log_printf(hovWarning,
-                 "The option 'linear_solver_sparse=%s' is not valid without CUDA or HIP support enabled."
+                 "The option 'linear_solver_sparse=%s' is not valid because HiOp was built without EVLOSER support."
                  " Will use 'linear_solver_sparse=auto'.\n",
                  GetString("linear_solver_sparse").c_str());
     }
     set_val("linear_solver_sparse", "auto");
   }
-#endif  // !defined(HIOP_USE_CUDA) && !defined(HIOP_USE_HIP)
+
+  if(GetString("duals_init_linear_solver_sparse") == "evloser") {
+    if(is_user_defined("duals_init_linear_solver_sparse")) {
+      log_printf(
+          hovWarning,
+          "The option 'duals_init_linear_solver_sparse=%s' is not valid because HiOp was built without EVLOSER support."
+          " Will use 'duals_init_linear_solver_sparse=auto'.\n",
+          GetString("duals_init_linear_solver_sparse").c_str());
+    }
+    set_val("duals_init_linear_solver_sparse", "auto");
+  }
+#endif  // HIOP_USE_EVLOSER
 
 #ifndef HIOP_USE_CUDA
   if(sol_sp == "resolve" || sol_sp == "cusolver-chol") {
