@@ -725,7 +725,6 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
       /////////////////////////////////////////////////////////////////////////////////////////////
       // CPU compute mode
       /////////////////////////////////////////////////////////////////////////////////////////////
-      if(linear_solver == "ma57" || linear_solver == "auto") {
 
 #ifdef HIOP_USE_EVLOSER
       if(linear_solver == "evloser") {
@@ -742,7 +741,7 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
         }
       }
 #endif  // HIOP_USE_EVLOSER
-
+if(linear_solver == "ma57" || linear_solver == "auto") {
 #ifdef HIOP_USE_COINHSL
         linSys_ = new hiopLinSolverSymSparseMA57(n, nnz, nlp_);
         actual_lin_solver = "MA57";

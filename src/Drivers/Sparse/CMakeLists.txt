@@ -59,9 +59,16 @@ add_test(NAME NlpSparse1_2 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx1.exe>" "
 if(HIOP_USE_CUDA)
   add_test(NAME NlpSparse1_3 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx1.exe>" "500" "-cusolver" "-selfcheck")
 endif(HIOP_USE_CUDA)
-# EVLOSER uses the existing SparseEx1 driver and selects the EVLOSER solver option.
-if(HIOP_USE_CUDA AND HIOP_USE_EVLOSER)
-  add_test(NAME NlpSparse1_EVLOSER COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx1.exe>" "500" "-evloser" "-selfcheck")
+# CPU-only EVLOSER integration test.
+if(HIOP_USE_EVLOSER AND NOT HIOP_USE_GPU)
+  add_test(
+    NAME NlpSparse1_EVLOSER_CPU
+    COMMAND ${RUNCMD}
+            "$<TARGET_FILE:NlpSparseEx1.exe>"
+            "500"
+            "-evloser"
+            "-selfcheck"
+  )
 endif()
 if(HIOP_USE_PARDISO)
   add_test(NAME NlpSparse1_4 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx1.exe>" "500" "-pardiso" "-selfcheck")
@@ -80,9 +87,17 @@ add_test(NAME NlpSparse2_2 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "
 if(HIOP_USE_CUDA)
   add_test(NAME NlpSparse2_3 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "500" "-cusolver" "-inertiafree" "-selfcheck")
 endif(HIOP_USE_CUDA)
-# EVLOSER uses the existing SparseEx2 driver with the required inertia-free path.
-if(HIOP_USE_CUDA AND HIOP_USE_EVLOSER)
-  add_test(NAME NlpSparse2_EVLOSER COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "500" "-evloser" "-inertiafree" "-selfcheck")
+# CPU-only EVLOSER integration test with the required inertia-free configuration.
+if(HIOP_USE_EVLOSER AND NOT HIOP_USE_GPU)
+  add_test(
+    NAME NlpSparse2_EVLOSER_CPU
+    COMMAND ${RUNCMD}
+            "$<TARGET_FILE:NlpSparseEx2.exe>"
+            "500"
+            "-evloser"
+            "-inertiafree"
+            "-selfcheck"
+  )
 endif()
 if(HIOP_USE_GINKGO)
   add_test(NAME NlpSparse2_4 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "500" "-ginkgo" "-inertiafree" "-selfcheck")

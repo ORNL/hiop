@@ -149,10 +149,18 @@ static bool parse_arguments(int argc,
 
 // If HiOp is built without CUDA de-select cuSOLVER.
 #ifndef HIOP_USE_RESOLVE
-  if(use_cusolver || use_evloser) {
+  if(use_cusolver) {
     printf("HiOp built without support for ReSolve. ");
     printf("Using default linear solver ...\n");
     use_cusolver = false;
+  }
+#endif
+
+// If EVLOSER is not available, de-select it.
+#ifndef HIOP_USE_EVLOSER
+  if(use_evloser) {
+    printf("HiOp built without support for EVLOSER. ");
+    printf("Using default linear solver ...\n");
     use_evloser = false;
   }
 #endif
@@ -252,6 +260,9 @@ int main(int argc, char** argv)
     } else {
       nlp.options->SetStringValue("linear_solver_sparse", "resolve");
     }
+
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+    // Device ReSolve and EVLOSER configurations use RF and hybrid execution.
     nlp.options->SetStringValue("resolve_refactorization", "rf");
     nlp.options->SetIntegerValue("ir_inner_maxit", 100);
     nlp.options->SetNumericValue("ir_inner_tol", 1e-8);
@@ -259,6 +270,7 @@ int main(int argc, char** argv)
     nlp.options->SetIntegerValue("ir_inner_conv_cond", 2);
     nlp.options->SetStringValue("ir_inner_gs_scheme", "cgs2");
     nlp.options->SetStringValue("compute_mode", "hybrid");
+#endif
     // LU solver needs to use inertia free approach
     nlp.options->SetStringValue("fact_acceptor", "inertia_free");
     nlp.options->SetIntegerValue("ir_outer_maxit", 0);

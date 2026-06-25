@@ -141,18 +141,25 @@ static bool parse_arguments(int argc,
 
 // If CUDA is not available, de-select cuSOLVER
 #ifndef HIOP_USE_CUDA
-  if(use_cusolver || use_evloser) {
+  if(use_cusolver) {
     printf("HiOp built without CUDA support. ");
     printf("Using default instead of cuSOLVER/EVLOSER ...\n");
     use_cusolver = false;
+  }
+#endif
+
+// If EVLOSER is not available, de-select it.
+#ifndef HIOP_USE_EVLOSER
+  if(use_evloser) {
+    printf("HiOp built without EVLOSER support. ");
+    printf("Using default linear solver ...\n");
     use_evloser = false;
   }
 #endif
 
-// Use cuSOLVER's LU factorization, if it was configured
+// Use Resolve's sparse LU path when cuSOLVER was selected.
 #ifdef HIOP_USE_RESOLVE
-  // EVLOSER uses the existing ReSolve-enabled sparse solver setup in this driver.
-  if(use_cusolver || use_evloser) {
+  if(use_cusolver) {
     use_resolve = true;
   }
 #endif
@@ -258,21 +265,24 @@ int main(int argc, char** argv)
     if(inertia_free) {
       nlp.options->SetStringValue("fact_acceptor", "inertia_free");
     }
-    if(use_resolve) {
+    if(use_resolve || use_evloser) {
       nlp.options->SetStringValue("duals_init", "zero");
       nlp.options->SetStringValue("linsol_mode", "speculative");
-      // EVLOSER keeps the ReSolve RF settings below but selects the EVLOSER solver name.
+
       if(use_evloser) {
         nlp.options->SetStringValue("linear_solver_sparse", "evloser");
       } else {
         nlp.options->SetStringValue("linear_solver_sparse", "resolve");
       }
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+      // Device ReSolve and EVLOSER configurations use RF and hybrid execution.
       nlp.options->SetStringValue("resolve_refactorization", "rf");
       nlp.options->SetStringValue("compute_mode", "hybrid");
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
       nlp.options->SetIntegerValue("ir_inner_conv_cond", 2);
       nlp.options->SetStringValue("ir_inner_gs_scheme", "cgs2");
       nlp.options->SetNumericValue("ir_inner_tol", 1e-8);
+#endif
     }
     if(use_ginkgo) {
       nlp.options->SetStringValue("linsol_mode", "speculative");
