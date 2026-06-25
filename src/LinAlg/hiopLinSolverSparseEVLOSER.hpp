@@ -59,7 +59,7 @@
 
 #include "hiopLinSolver.hpp"
 #include "hiopMatrixSparseTriplet.hpp"
-#include "evloser_execution_mode.hpp"
+#include "EVLOSER/evloser_execution_mode.hpp"
 #include <unordered_map>
 
 /** Implements the sparse linear solver class using the EVLOSER interface

@@ -98,7 +98,7 @@ cmake_dependent_option(
 )
 
 cmake_dependent_option(
-  HIOP_USE_RESOLVE "Build with ReSolve sparse solver support" ON "HIOP_USE_GPU" OFF
+  HIOP_USE_RESOLVE "Build with ReSolve sparse solver support" ON "HIOP_USE_CUDA" OFF
 )
 
 option(
@@ -293,9 +293,6 @@ endif(HIOP_USE_GPU)
 
 if(HIOP_USE_RAJA)
   # Look for CMake configuration file in RAJA installation
-  # The RAJA driver path needs camp available with the RAJA/Umpire target set.
-  find_package(camp CONFIG REQUIRED)
-
   find_package(RAJA CONFIG
     PATHS ${RAJA_DIR} ${RAJA_DIR}/share/raja/cmake
     REQUIRED)
@@ -303,7 +300,7 @@ if(HIOP_USE_RAJA)
   find_package(umpire CONFIG
     PATHS ${umpire_DIR} ${umpire_DIR}/share/umpire/cmake
     REQUIRED)
-  target_link_libraries(hiop_tpl INTERFACE umpire RAJA camp)
+  target_link_libraries(hiop_tpl INTERFACE umpire RAJA)
   message(STATUS "Found RAJA pkg-config: ${RAJA_CONFIG}")
   message(STATUS "Found umpire pkg-config: ${umpire_CONFIG}")
 endif()
