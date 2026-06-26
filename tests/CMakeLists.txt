@@ -78,6 +78,13 @@ if(HIOP_USE_EVLOSER AND NOT HIOP_USE_GPU)
     LinAlg/testEVLOSERKLUCPU.cpp
   )
 
+  target_include_directories(
+    testEVLOSERKLUCPU
+    PRIVATE
+      ${PROJECT_SOURCE_DIR}/src/LinAlg/EVLOSER
+  )
+
+
   target_link_libraries(
     testEVLOSERKLUCPU
     PRIVATE
