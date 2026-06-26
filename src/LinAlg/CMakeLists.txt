@@ -12,6 +12,7 @@ set(hiopLinAlg_INTERFACE_HEADERS
   hiopLinSolverSparseSTRUMPACK.hpp
   hiopLinSolverSparsePARDISO.hpp
   hiopLinSolverSparseReSolve.hpp
+  hiopLinSolverSparseEVLOSER.hpp
   hiopLinSolverUMFPACKZ.hpp
   hiopLinSolverCholCuSparse.hpp
   hiopMatrix.hpp
@@ -101,6 +102,11 @@ set(hiopLinAlg_CUSOLVER_LU_SRC
   hiopLinSolverSparseReSolve.cpp
 )
 
+set(hiopLinAlg_EVLOSER_SRC
+  hiopLinSolverSparseEVLOSER.cpp
+  hiopLinSolverSparseEVLOSERExternal.cpp
+)
+
 set(hiopLinAlg_CUSOLVER_CHOL_SRC
   hiopLinSolverCholCuSparse.cpp
 )
@@ -153,11 +159,16 @@ if(HIOP_SPARSE)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_CUSOLVER_LU_SRC})
       set_source_files_properties(${hiopLinAlg_CUSOLVER_LU_SRC} PROPERTIES LANGUAGE CUDA)
     endif(HIOP_USE_RESOLVE)
+    if(HIOP_USE_EVLOSER)
+      find_package(ReSolve CONFIG REQUIRED)
+      list(APPEND hiopLinAlg_SRC ${hiopLinAlg_EVLOSER_SRC})
+      target_link_libraries(hiop_tpl INTERFACE ReSolve::ReSolve)
+    endif()
     if(HIOP_USE_CUDA)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_CUSOLVER_CHOL_SRC})
       set_source_files_properties(${hiopLinAlg_CUSOLVER_CHOL_SRC} PROPERTIES LANGUAGE CUDA)
     endif(HIOP_USE_CUDA)
-    
+
     if(HIOP_USE_GINKGO)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_Ginkgo_SRC})
   endif(HIOP_USE_GINKGO)

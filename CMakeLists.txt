@@ -100,6 +100,12 @@ cmake_dependent_option(
   HIOP_USE_RESOLVE "Build with cuSolver LU support" ON "HIOP_USE_CUDA" OFF
 )
 
+option(
+  HIOP_USE_EVLOSER
+  "Build with external ReSolve sparse solver support"
+  OFF
+)
+
 add_library(hiop_tpl INTERFACE)
 add_library(hiop_options INTERFACE)
 add_library(hiop_warnings INTERFACE)
@@ -394,14 +400,15 @@ if(HIOP_SPARSE)
     endif()
   endif(HIOP_USE_GINKGO)
 
-  if(NOT HIOP_USE_COINHSL AND NOT HIOP_USE_STRUMPACK AND NOT HIOP_USE_PARDISO AND NOT HIOP_USE_GINKGO)
+  if(NOT HIOP_USE_COINHSL AND NOT HIOP_USE_STRUMPACK AND NOT HIOP_USE_PARDISO AND NOT HIOP_USE_GINKGO AND NOT HIOP_USE_EVLOSER)
     set(HIOP_SPARSE OFF CACHE BOOL "Build without sparse linear algebra" FORCE)
-    message(STATUS "Cannot find COINHSL, STRUMPACK, PARDISO nor GINKGO for sparse linear algebra, and the option HIOP_SPARSE will be disabled")
-endif(NOT HIOP_USE_COINHSL AND NOT HIOP_USE_STRUMPACK AND NOT HIOP_USE_PARDISO AND NOT HIOP_USE_GINKGO)
+    message(STATUS "Cannot find COINHSL, STRUMPACK, PARDISO, GINKGO, or external ReSolve support for sparse linear algebra, and the option HIOP_SPARSE will be disabled")
+endif()
 else(HIOP_SPARSE)
   set(HIOP_USE_COINHSL OFF CACHE BOOL "Build without COINHSL" FORCE)
   set(HIOP_USE_STRUMPACK OFF CACHE BOOL "Build without STRUMPACK" FORCE)
   set(HIOP_USE_RESOLVE OFF CACHE BOOL "Build without cuSOLVER LU module" FORCE)
+  set(HIOP_USE_EVLOSER OFF CACHE BOOL "Build without EVLOSER" FORCE)
   set(HIOP_USE_PARDISO OFF CACHE BOOL "Build without PARDISO" FORCE)
   set(HIOP_USE_GINKGO OFF CACHE BOOL "Build without GINKGO" FORCE)
 endif(HIOP_SPARSE)
