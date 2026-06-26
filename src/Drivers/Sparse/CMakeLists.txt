@@ -18,12 +18,14 @@ add_executable(NlpSparseEx4.exe NlpSparseEx4.cpp NlpSparseEx4Driver.cpp)
 target_link_libraries(NlpSparseEx4.exe HiOp::HiOp)
 
 if(HIOP_USE_RAJA)
-  if(HIOP_USE_GPU AND HIOP_USE_CUDA AND (HIOP_USE_RESOLVE OR HIOP_USE_EVLOSER))
-    set_source_files_properties(
-      NlpSparseRajaEx2.cpp 
-      NlpSparseRajaEx2Driver.cpp 
-      PROPERTIES LANGUAGE CUDA
-    )
+  if(HIOP_USE_GPU AND (HIOP_USE_CUDA OR HIOP_USE_HIP) AND (HIOP_USE_RESOLVE OR HIOP_USE_EVLOSER))
+    if(HIOP_USE_CUDA)
+      set_source_files_properties(
+        NlpSparseRajaEx2.cpp
+        NlpSparseRajaEx2Driver.cpp
+        PROPERTIES LANGUAGE CUDA
+      )
+    endif()
   
     add_executable(NlpSparseRajaEx2.exe  NlpSparseRajaEx2Driver.cpp  NlpSparseRajaEx2.cpp)
     target_link_libraries(NlpSparseRajaEx2.exe HiOp::HiOp)
@@ -83,14 +85,18 @@ if(HIOP_USE_GINKGO)
   endif(HIOP_USE_HIP)
 endif(HIOP_USE_GINKGO)
 
-if(HIOP_USE_RAJA AND HIOP_USE_GPU AND HIOP_USE_CUDA)
-  if(HIOP_USE_RESOLVE)
-    add_test(NAME NlpSparseRaja2_1 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-resolve_cuda_glu")
-    add_test(NAME NlpSparseRaja2_2 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-resolve_cuda_rf")
+if(HIOP_USE_RAJA AND HIOP_USE_GPU)
+  if(HIOP_USE_CUDA)
+    if(HIOP_USE_RESOLVE)
+      add_test(NAME NlpSparseRaja2_1 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-resolve_cuda_glu")
+      add_test(NAME NlpSparseRaja2_2 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-resolve_cuda_rf")
+    endif()
+    if(HIOP_USE_EVLOSER)
+      add_test(NAME NlpSparseRaja2_EVLOSER_RF COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-evloser_cuda_rf")
+    endif()
   endif()
-
-  if(HIOP_USE_EVLOSER)
-    add_test(NAME NlpSparseRaja2_EVLOSER_RF COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-evloser_cuda_rf")
+  if(HIOP_USE_HIP AND HIOP_USE_EVLOSER)
+    add_test(NAME NlpSparseRaja2_EVLOSER_HIP_RF COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseRajaEx2.exe>" "500" "-inertiafree" "-selfcheck" "-evloser_hip_rf")
   endif()
 endif()
 
