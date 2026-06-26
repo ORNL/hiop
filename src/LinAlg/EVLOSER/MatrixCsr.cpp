@@ -53,7 +53,6 @@
  *
  */
 
-#include "hiop_blasdefs.hpp"
 #include "MatrixCsr.hpp"
 
 #include "evloser_gpu_defs.hpp"
