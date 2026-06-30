@@ -64,11 +64,11 @@
 #include <resolve/matrix/Csr.hpp>
 #include <resolve/vector/Vector.hpp>
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+#if defined(HIOP_USE_CUDA)
 #include <cuda_runtime.h>
 #include <resolve/LinSolverDirectCuSolverRf.hpp>
 #include <resolve/matrix/MatrixHandler.hpp>
-#elif defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#elif defined(HIOP_USE_HIP)
 #include <hip/hip_runtime.h>
 #include <resolve/LinSolverDirectRocSolverRf.hpp>
 #include <resolve/workspace/LinAlgWorkspaceHIP.hpp>
@@ -87,7 +87,7 @@ namespace hiop
 namespace
 {
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+#if defined(HIOP_USE_CUDA)
 
 bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void* source, size_t bytes, const char* operation)
 {
@@ -119,7 +119,7 @@ bool copy_device_to_device(hiopNlpFormulation* nlp,
   return false;
 }
 
-#elif defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#elif defined(HIOP_USE_HIP)
 
 bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void* source, size_t bytes, const char* operation)
 {
@@ -172,7 +172,7 @@ private:
   int reset_solver();
   hiopMatrixSparse* host_matrix() const;
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
   int setup_gpu_refactorization();
 #endif
 
@@ -181,9 +181,9 @@ private:
 
   ReSolve::LinSolverDirectKLU* solver_;
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+#if defined(HIOP_USE_CUDA)
   ReSolve::LinSolverDirectCuSolverRf* rf_solver_;
-#elif defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#elif defined(HIOP_USE_HIP)
   ReSolve::LinSolverDirectRocSolverRf* rf_solver_;
   ReSolve::LinAlgWorkspaceHIP* hip_workspace_;
 #endif
@@ -211,9 +211,9 @@ private:
 hiopLinSolverSparseEVLOSERExternal::hiopLinSolverSparseEVLOSERExternal(const int& n, const int& nnz, hiopNlpFormulation* nlp)
     : nlp_{nlp},
       solver_{nullptr},
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+#if defined(HIOP_USE_CUDA)
       rf_solver_{nullptr},
-#elif defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#elif defined(HIOP_USE_HIP)
       rf_solver_{nullptr},
       hip_workspace_{nullptr},
 #endif
@@ -237,7 +237,7 @@ hiopLinSolverSparseEVLOSERExternal::hiopLinSolverSparseEVLOSERExternal(const int
   if(mem_space == "host" || mem_space == "default") {
     use_device_ = false;
   } else if(mem_space == "device") {
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
     use_device_ = true;
 
     M_host_ = LinearAlgebraFactory::create_matrix_sparse("default", n, n, nnz);
@@ -291,11 +291,11 @@ hiopLinSolverSparseEVLOSERExternal::hiopLinSolverSparseEVLOSERExternal(const int
   solver_->setOrdering(ordering_);
   solver_->setHaltIfSingular(true);
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+#if defined(HIOP_USE_CUDA)
   if(use_device_) {
     rf_solver_ = new ReSolve::LinSolverDirectCuSolverRf();
   }
-#elif defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#elif defined(HIOP_USE_HIP)
   if(use_device_) {
     hip_workspace_ = new ReSolve::LinAlgWorkspaceHIP();
 
@@ -333,10 +333,10 @@ hiopLinSolverSparseEVLOSERExternal::hiopLinSolverSparseEVLOSERExternal(const int
 
 hiopLinSolverSparseEVLOSERExternal::~hiopLinSolverSparseEVLOSERExternal()
 {
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+#if defined(HIOP_USE_CUDA)
   delete rf_solver_;
   rf_solver_ = nullptr;
-#elif defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#elif defined(HIOP_USE_HIP)
   delete rf_solver_;
   rf_solver_ = nullptr;
 
@@ -405,7 +405,7 @@ int hiopLinSolverSparseEVLOSERExternal::matrixChanged(hiopMatrixSparse& matrix)
       return -1;
     }
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
     if(use_device_) {
       status = setup_gpu_refactorization();
 
@@ -431,7 +431,7 @@ int hiopLinSolverSparseEVLOSERExternal::matrixChanged(hiopMatrixSparse& matrix)
 
     nlp_->log->printf(hovScalars, "External ReSolve KLU factorization successful.\n");
   } else {
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
     if(use_device_) {
       status = rf_solver_->refactorize();
     } else
@@ -476,7 +476,7 @@ bool hiopLinSolverSparseEVLOSERExternal::solve(hiopVector& x)
 
   double* x_data = x.local_data();
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
   if(use_device_) {
     if(rhs_->copyFromExternal(x_data, ReSolve::memory::DEVICE, ReSolve::memory::DEVICE) != 0) {
       nlp_->log->printf(hovError, "Failed to copy the device right-hand side into ReSolve.\n");
@@ -550,7 +550,7 @@ int hiopLinSolverSparseEVLOSERExternal::firstCall()
 {
   assert(M_ != nullptr);
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
   if(use_device_) {
     if(!copy_device_to_host(nlp_,
                             M_host_->M(),
@@ -594,7 +594,7 @@ int hiopLinSolverSparseEVLOSERExternal::firstCall()
     return -1;
   }
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
   if(use_device_ &&
      (((matrix_->getRowData(ReSolve::memory::DEVICE) == nullptr || matrix_->getColData(ReSolve::memory::DEVICE) == nullptr ||
         matrix_->getValues(ReSolve::memory::DEVICE) == nullptr) &&
@@ -624,7 +624,7 @@ int hiopLinSolverSparseEVLOSERExternal::update_matrix_values()
   assert(M_ != nullptr);
   assert(matrix_ != nullptr);
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
   if(use_device_) {
     if(!copy_device_to_host(nlp_,
                             M_host_->M(),
@@ -655,7 +655,7 @@ int hiopLinSolverSparseEVLOSERExternal::update_matrix_values()
     return -1;
   }
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
   if(use_device_ &&
      (((matrix_->getRowData(ReSolve::memory::DEVICE) == nullptr || matrix_->getColData(ReSolve::memory::DEVICE) == nullptr ||
         matrix_->getValues(ReSolve::memory::DEVICE) == nullptr) &&
@@ -806,7 +806,7 @@ void hiopLinSolverSparseEVLOSERExternal::set_csr_indices_values()
   delete[] nnz_each_row_tmp;
 }
 
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA) || defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
 
 int hiopLinSolverSparseEVLOSERExternal::setup_gpu_refactorization()
 {
@@ -841,12 +841,12 @@ int hiopLinSolverSparseEVLOSERExternal::setup_gpu_refactorization()
 
 int hiopLinSolverSparseEVLOSERExternal::reset_solver()
 {
-#if defined(HIOP_USE_CUDA) || defined(HAVE_CUDA)
+#if defined(HIOP_USE_CUDA)
   if(use_device_) {
     delete rf_solver_;
     rf_solver_ = new ReSolve::LinSolverDirectCuSolverRf();
   }
-#elif defined(HIOP_USE_HIP) || defined(HAVE_HIP)
+#elif defined(HIOP_USE_HIP)
   if(use_device_) {
     delete rf_solver_;
     rf_solver_ = new ReSolve::LinSolverDirectRocSolverRf(hip_workspace_);
