@@ -214,7 +214,7 @@ static bool parse_arguments(int argc,
     printf("Using ReSolve ...\n");
   }
 
-  // EVLOSER has separate CUDA and HIP RF flags because the HIP path disables IR below.
+  // EVLOSER uses separate flags to select the CUDA or HIP RF backend.
   if(use_evloser_cuda_rf && use_evloser_hip_rf) {
     use_evloser_hip_rf = false;
     printf("You can select either CUDA RF or HIP RF with EVLOSER, not both. ");
@@ -334,23 +334,24 @@ int main(int argc, char** argv)
     // lsq initialization of the duals fails for this example since the Jacobian is rank deficient
     // use zero initialization
     // EVLOSER uses the same refactorization option string; the solver name selects the backend.
-    if(use_evloser_cuda_rf || use_evloser_hip_rf) {
+    const bool use_evloser = use_evloser_cuda_rf || use_evloser_hip_rf;
+
+    if(use_evloser) {
       nlp.options->SetStringValue("linear_solver_sparse", "evloser");
     } else {
       nlp.options->SetStringValue("linear_solver_sparse", "resolve");
     }
-    if(use_resolve_cuda_rf || use_evloser_cuda_rf) {
+
+    if(use_resolve_cuda_rf || use_evloser) {
       nlp.options->SetStringValue("resolve_refactorization", "rf");
-      nlp.options->SetIntegerValue("ir_inner_maxit", 20);
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
     }
 
-    // HIP EVLOSER RF currently runs without iterative refinement.
-    if(use_evloser_hip_rf) {
-      nlp.options->SetStringValue("resolve_refactorization", "rf");
-      nlp.options->SetIntegerValue("ir_inner_maxit", 0);
-      nlp.options->SetIntegerValue("ir_outer_maxit", 0);
+    // Inner iterative refinement is only used by the in-tree ReSolve backend.
+    if(use_resolve_cuda_rf) {
+      nlp.options->SetIntegerValue("ir_inner_maxit", 20);
     }
+
     nlp.options->SetStringValue("duals_init", "zero");
     nlp.options->SetStringValue("mem_space", "device");
     nlp.options->SetStringValue("fact_acceptor", "inertia_free");
