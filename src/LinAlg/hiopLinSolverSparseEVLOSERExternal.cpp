@@ -57,17 +57,15 @@
 #include "hiopMatrixSparse.hpp"
 #include "hiopVector.hpp"
 
-#include "hiop_blasdefs.hpp"
+#include "hiopCppStdUtils.hpp"
 
 #include <resolve/LinSolverDirectKLU.hpp>
-#include <resolve/matrix/Csc.hpp>
 #include <resolve/matrix/Csr.hpp>
 #include <resolve/vector/Vector.hpp>
 
 #if defined(HIOP_USE_CUDA)
 #include <cuda_runtime.h>
 #include <resolve/LinSolverDirectCuSolverRf.hpp>
-#include <resolve/matrix/MatrixHandler.hpp>
 #elif defined(HIOP_USE_HIP)
 #include <hip/hip_runtime.h>
 #include <resolve/LinSolverDirectRocSolverRf.hpp>
