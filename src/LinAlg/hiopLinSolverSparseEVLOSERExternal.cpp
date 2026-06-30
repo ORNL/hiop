@@ -397,7 +397,9 @@ int hiopLinSolverSparseEVLOSERExternal::matrixChanged(hiopMatrixSparse& matrix)
                         "Regularizing ...\n");
 
       factorization_valid_ = false;
-      reset_solver();
+      if(reset_solver() != 0) {
+        nlp_->log->printf(hovError, "External ReSolve solver reset failed.\n");
+      }
 
       nlp_->runStats.linsolv.tmFactTime.stop();
       return -1;
@@ -417,7 +419,9 @@ int hiopLinSolverSparseEVLOSERExternal::matrixChanged(hiopMatrixSparse& matrix)
                           "refactorization failed. Regularizing ...\n");
 
         factorization_valid_ = false;
-        reset_solver();
+        if(reset_solver() != 0) {
+          nlp_->log->printf(hovError, "External ReSolve solver reset failed.\n");
+        }
 
         nlp_->runStats.linsolv.tmFactTime.stop();
         return -1;
@@ -444,7 +448,9 @@ int hiopLinSolverSparseEVLOSERExternal::matrixChanged(hiopMatrixSparse& matrix)
                         "Regularizing ...\n");
 
       factorization_valid_ = false;
-      reset_solver();
+      if(reset_solver() != 0) {
+        nlp_->log->printf(hovError, "External ReSolve solver reset failed.\n");
+      }
 
       nlp_->runStats.linsolv.tmFactTime.stop();
       return -1;
@@ -577,6 +583,14 @@ int hiopLinSolverSparseEVLOSERExternal::firstCall()
 #endif
 
   compute_nnz();
+
+  // Clean up partial allocations before retrying first-call setup.
+  delete matrix_;
+  matrix_ = nullptr;
+  delete[] index_convert_CSR2Triplet_host_;
+  index_convert_CSR2Triplet_host_ = nullptr;
+  delete[] index_convert_extra_Diag2CSR_host_;
+  index_convert_extra_Diag2CSR_host_ = nullptr;
 
   matrix_ = new ReSolve::matrix::Csr(n_, n_, nnz_, true, true);
 
