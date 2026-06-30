@@ -268,9 +268,7 @@ int main(int argc, char** argv)
     if(use_resolve || use_evloser) {
       nlp.options->SetStringValue("duals_init", "zero");
       nlp.options->SetStringValue("linsol_mode", "speculative");
-      nlp.options->SetStringValue(
-          "linear_solver_sparse",
-          use_evloser ? "evloser" : "resolve");
+      nlp.options->SetStringValue("linear_solver_sparse", use_evloser ? "evloser" : "resolve");
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
 #if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
       nlp.options->SetStringValue("resolve_refactorization", "rf");
@@ -387,12 +385,8 @@ static bool self_check(size_type n, double objval, const bool inertia_free)
   for(int it = 0; it < num_n_saved; it++) {
     if(n_saved[it] == n) {
       found = true;
-      const double error =
-          std::fabs((objval_saved[it] - objval) /
-                    (1 + objval_saved[it]));
-      if(!std::isfinite(objval) ||
-         !std::isfinite(error) ||
-         error > relerr) {
+      const double error = std::fabs((objval_saved[it] - objval) / (1 + objval_saved[it]));
+      if(!std::isfinite(objval) || !std::isfinite(error) || error > relerr) {
         printf(
             "selfcheck failure. Objective (%18.12e) does not agree (%d digits) with the saved value (%18.12e) for n=%d.\n",
             objval,

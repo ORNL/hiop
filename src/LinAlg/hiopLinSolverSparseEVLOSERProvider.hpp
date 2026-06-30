@@ -90,10 +90,7 @@ public:
 /**
  * @brief Creates the external ReSolve-backed EVLOSER implementation.
  */
-hiopLinSolverSparseEVLOSERProvider*
-create_hiop_evloser_provider(const int& n,
-                             const int& nnz,
-                             hiopNlpFormulation* nlp);
+hiopLinSolverSparseEVLOSERProvider* create_hiop_evloser_provider(const int& n, const int& nnz, hiopNlpFormulation* nlp);
 
 }  // namespace hiop
 

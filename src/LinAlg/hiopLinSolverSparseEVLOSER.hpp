@@ -80,9 +80,7 @@ class hiopLinSolverSparseEVLOSERProvider;
 class hiopLinSolverSymSparseEVLOSER : public hiopLinSolverSymSparse
 {
 public:
-  hiopLinSolverSymSparseEVLOSER(const int& n,
-                               const int& nnz,
-                               hiopNlpFormulation* nlp);
+  hiopLinSolverSymSparseEVLOSER(const int& n, const int& nnz, hiopNlpFormulation* nlp);
 
   virtual ~hiopLinSolverSymSparseEVLOSER();
 

@@ -58,10 +58,7 @@
 namespace hiop
 {
 
-hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(
-    const int& n,
-    const int& nnz,
-    hiopNlpFormulation* nlp)
+hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const int& nnz, hiopNlpFormulation* nlp)
     : hiopLinSolverSymSparse(n, nnz, nlp),
       provider_{create_hiop_evloser_provider(n, nnz, nlp)}
 {
