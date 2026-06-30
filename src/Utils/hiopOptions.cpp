@@ -924,11 +924,12 @@ void hiopOptionsNLP::register_options()
   {
     vector<string> range{"auto", "ma57", "pardiso", "strumpack", "resolve", "evloser", "ginkgo", "cusolver-chol"};
 
-    register_str_option("linear_solver_sparse",
-                        "auto",
-                        range,
-                        "Selects among MA57, PARDISO, STRUMPACK, ReSolve, EVLOSER, cuSOLVER's Cholesky or LU, and GINKGO for the "
-                        "sparse linear solves.");
+    register_str_option(
+        "linear_solver_sparse",
+        "auto",
+        range,
+        "Selects among MA57, PARDISO, STRUMPACK, ReSolve, EVLOSER, cuSOLVER's Cholesky or LU, and GINKGO for the "
+        "sparse linear solves.");
   }
 
   // choose linear solver for duals intializations for sparse NLP problems
@@ -938,10 +939,11 @@ void hiopOptionsNLP::register_options()
   {
     vector<string> range{"auto", "ma57", "pardiso", "resolve", "evloser", "strumpack", "ginkgo"};
 
-    register_str_option("duals_init_linear_solver_sparse",
-                        "auto",
-                        range,
-                        "Selects among MA57, PARDISO, ReSolve, EVLOSER, cuSOLVER, STRUMPACK, and GINKGO for the sparse linear solves.");
+    register_str_option(
+        "duals_init_linear_solver_sparse",
+        "auto",
+        range,
+        "Selects among MA57, PARDISO, ReSolve, EVLOSER, cuSOLVER, STRUMPACK, and GINKGO for the sparse linear solves.");
   }
 
   // choose hardware backend for the Ginkgo solver to run on.
