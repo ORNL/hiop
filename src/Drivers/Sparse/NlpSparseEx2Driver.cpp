@@ -164,7 +164,7 @@ static bool parse_arguments(int argc,
   }
 #endif
 
-  // If cuSOLVER was selected, but inertia free approach was not, add inertia-free
+  // Sparse LU solvers require the inertia-free approach.
   if((use_cusolver || use_evloser) && !(inertia_free)) {
     inertia_free = true;
     printf("Selected LU sparse solver requires inertia free approach. ");
