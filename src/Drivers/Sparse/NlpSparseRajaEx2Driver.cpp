@@ -2,6 +2,7 @@
 #include "hiopNlpFormulation.hpp"
 #include "hiopAlgFilterIPM.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <string>
 
@@ -161,7 +162,16 @@ static bool parse_arguments(int argc,
       return false;  // 4 or more arguments
   }
 
-// Currently only CUDA backend for ReSolve is available. Unselect ReSolve if CUDA is not enabled
+#ifndef HIOP_USE_EVLOSER
+  if(use_evloser_cuda_rf || use_evloser_hip_rf) {
+    printf("HiOp built without EVLOSER support. ");
+    printf("Using default linear solver ...\n");
+    use_evloser_cuda_rf = false;
+    use_evloser_hip_rf = false;
+  }
+#endif
+
+// CUDA solver options require CUDA support.
 #ifndef HIOP_USE_CUDA
   if(use_resolve_cuda_glu) {
     printf("HiOp built without CUDA support. ");
@@ -189,11 +199,10 @@ static bool parse_arguments(int argc,
   }
 #endif
 
-  // If ReSolve was selected, but inertia free approach was not, add inertia-free
-  // EVLOSER RF has the same inertia-free requirement as the ReSolve sparse-LU path.
+  // Sparse LU solvers require the inertia-free approach.
   if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_evloser_cuda_rf || use_evloser_hip_rf) && !(inertia_free)) {
     inertia_free = true;
-    printf("LU solver from ReSolve library requires inertia free approach. ");
+    printf("Selected LU sparse solver requires inertia free approach. ");
     printf("Enabling now ...\n");
   }
 
@@ -202,7 +211,7 @@ static bool parse_arguments(int argc,
     use_resolve_cuda_rf = false;
     use_evloser_cuda_rf = false;
     use_evloser_hip_rf = false;
-    printf("You can select either GLU or Rf refactorization, not both. ");
+    printf("You can select either GLU or RF refactorization, not both. ");
     printf("Using default GLU refactorization ...\n");
   }
 
@@ -260,7 +269,7 @@ static void usage(const char* exeName)
       "  '-evloser_cuda_rf' : use EVLOSER linear solver with KLU factorization and cusolverRf refactorization "
       "[optional]\n");
   printf(
-      "  '-evloser_hip_rf' : use EVLOSER linear solver with KLU factorization and hipsolverRf refactorization "
+      "  '-evloser_hip_rf' : use EVLOSER linear solver with KLU factorization and rocSOLVER RF refactorization "
       "[optional]\n");
   printf("  '-ginkgo': use GINKGO linear solver [optional]\n");
 }
@@ -330,7 +339,6 @@ int main(int argc, char** argv)
     nlp.options->SetStringValue("compute_mode", "gpu");
     nlp.options->SetStringValue("KKTLinsys", "xdycyd");
 
-    // only support cusolverLU right now, 2023.02.28
     // lsq initialization of the duals fails for this example since the Jacobian is rank deficient
     // use zero initialization
     // EVLOSER uses the same refactorization option string; the solver name selects the backend.
@@ -347,7 +355,7 @@ int main(int argc, char** argv)
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
     }
 
-    // Inner iterative refinement is only used by the in-tree ReSolve backend.
+    // Inner iterative refinement is only used by the embedded ReSolve backend.
     if(use_resolve_cuda_rf) {
       nlp.options->SetIntegerValue("ir_inner_maxit", 20);
     }
@@ -405,7 +413,8 @@ static bool self_check(size_type n, double objval, const bool inertia_free)
   for(int it = 0; it < num_n_saved; it++) {
     if(n_saved[it] == n) {
       found = true;
-      if(fabs((objval_saved[it] - objval) / (1 + objval_saved[it])) > relerr) {
+      const double error = std::fabs((objval_saved[it] - objval) / (1 + objval_saved[it]));
+      if(!std::isfinite(objval) || !std::isfinite(error) || error > relerr) {
         printf(
             "selfcheck failure. Objective (%18.12e) does not agree (%d digits) with the saved value (%18.12e) for n=%d.\n",
             objval,
