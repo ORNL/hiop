@@ -63,6 +63,14 @@
 #include <resolve/matrix/Csr.hpp>
 #include <resolve/vector/Vector.hpp>
 
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+#include <resolve/GramSchmidt.hpp>
+#include <resolve/LinSolverIterativeFGMRES.hpp>
+#include <resolve/PreconditionerLU.hpp>
+#include <resolve/matrix/MatrixHandler.hpp>
+#include <resolve/vector/VectorHandler.hpp>
+#endif
+
 #if defined(HIOP_USE_CUDA)
 #include <cuda_runtime.h>
 #include <resolve/LinSolverDirectCuSolverGLU.hpp>
@@ -200,6 +208,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       index_convert_extra_Diag2CSR_device_(nullptr),
       factorizationSetupSucc_(0),
       is_first_call_(true),
+      use_ir_(false),
       matrix_(nullptr),
       rhs_(nullptr),
       solution_(nullptr),
@@ -213,6 +222,15 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       ,
       hip_workspace_(nullptr),
       hip_rf_solver_(nullptr)
+#endif
+
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+      ,
+      ir_matrix_handler_(nullptr),
+      ir_vector_handler_(nullptr),
+      ir_gram_schmidt_(nullptr),
+      ir_solver_(nullptr),
+      ir_preconditioner_(nullptr)
 #endif
       ,
       refactorization_mode_(RefactorizationMode::CPU_KLU)
@@ -330,7 +348,117 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     nlp_->log->printf(hovError, "Failed to allocate ReSolve vectors.\n");
     std::abort();
   }
+  const int ir_maxit =
+      nlp_->options->GetInteger("ir_inner_maxit");
 
+  const int ir_restart =
+      nlp_->options->GetInteger("ir_inner_restart");
+
+  const double ir_tol =
+      nlp_->options->GetNumeric("ir_inner_tol");
+
+  const int ir_conv_cond =
+      nlp_->options->GetInteger("ir_inner_conv_cond");
+
+  const std::string ir_gs_scheme =
+      nlp_->options->GetString("ir_inner_gs_scheme");
+
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+  if(ir_maxit > 0) {
+#if defined(HIOP_USE_CUDA)
+    if(refactorization_mode_ == RefactorizationMode::CUDA_RF) {
+      ir_matrix_handler_ =
+          new ReSolve::MatrixHandler(cuda_workspace_);
+
+      ir_vector_handler_ =
+          new ReSolve::VectorHandler(cuda_workspace_);
+
+      ir_preconditioner_ =
+          new ReSolve::PreconditionerLU(cuda_rf_solver_);
+    } else if(refactorization_mode_ == RefactorizationMode::CUDA_GLU) {
+      nlp_->log->printf(
+          hovWarning,
+          "EVLOSER iterative refinement is supported only with RF; "
+          "disabling it for CUDA GLU.\n"
+      );
+    }
+#elif defined(HIOP_USE_HIP)
+    if(refactorization_mode_ == RefactorizationMode::HIP_RF) {
+      ir_matrix_handler_ =
+          new ReSolve::MatrixHandler(hip_workspace_);
+
+      ir_vector_handler_ =
+          new ReSolve::VectorHandler(hip_workspace_);
+
+      ir_preconditioner_ =
+          new ReSolve::PreconditionerLU(hip_rf_solver_);
+    }
+#endif
+
+    if(ir_preconditioner_ != nullptr) {
+      ReSolve::GramSchmidt::GSVariant gs_variant =
+          ReSolve::GramSchmidt::MGS;
+
+      if(ir_gs_scheme == "cgs2") {
+        gs_variant = ReSolve::GramSchmidt::CGS2;
+      } else if(ir_gs_scheme == "mgs_two_synch") {
+        gs_variant = ReSolve::GramSchmidt::MGS_TWO_SYNC;
+      } else if(ir_gs_scheme == "mgs_pm") {
+        gs_variant = ReSolve::GramSchmidt::MGS_PM;
+      } else if(ir_gs_scheme != "mgs") {
+        nlp_->log->printf(
+            hovWarning,
+            "Unsupported EVLOSER Gram-Schmidt scheme %s; using mgs.\n",
+            ir_gs_scheme.c_str()
+        );
+      }
+
+      ir_gram_schmidt_ =
+          new ReSolve::GramSchmidt(
+              ir_vector_handler_,
+              gs_variant
+          );
+
+      ir_solver_ =
+          new ReSolve::LinSolverIterativeFGMRES(
+              ir_matrix_handler_,
+              ir_vector_handler_,
+              ir_gram_schmidt_
+          );
+
+      ir_solver_->setMaxit(ir_maxit);
+      ir_solver_->setTol(ir_tol);
+
+      int ir_status = 0;
+
+      ir_status +=
+          ir_solver_->setRestart(ir_restart);
+
+      ir_status +=
+          ir_solver_->setConvergenceCondition(
+              ir_conv_cond
+          );
+
+      ir_status +=
+          ir_solver_->setFlexible(true);
+
+      ir_status +=
+          ir_solver_->setPreconditioner(
+              ir_preconditioner_
+          );
+
+      if(ir_status == 0) {
+        use_ir_ = true;
+      } else {
+        nlp_->log->printf(
+            hovWarning,
+            "EVLOSER iterative refinement configuration failed; "
+            "using the direct solution only.\n"
+        );
+      }
+    }
+  }
+#endif
   nlp_->log->printf(hovSummary, "Ordering: %d\n", ordering_);
 
   nlp_->log->printf(hovSummary, "Factorization: klu\n");
@@ -367,11 +495,63 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
 #endif
   }
 
-  nlp_->log->printf(hovSummary, "Use IR: no\n");
+  nlp_->log->printf(
+      hovSummary,
+      "Use IR: %s\n",
+      use_ir_ ? "yes" : "no"
+  );
+
+  if(use_ir_) {
+    nlp_->log->printf(
+        hovSummary,
+        "IR maximum iterations: %d\n",
+        ir_maxit
+    );
+
+    nlp_->log->printf(
+        hovSummary,
+        "IR restart: %d\n",
+        ir_restart
+    );
+
+    nlp_->log->printf(
+        hovSummary,
+        "IR tolerance: %e\n",
+        ir_tol
+    );
+
+    nlp_->log->printf(
+        hovSummary,
+        "IR Gram-Schmidt scheme: %s\n",
+        ir_gs_scheme.c_str()
+    );
+
+    nlp_->log->printf(
+        hovSummary,
+        "IR convergence condition: %d\n",
+        ir_conv_cond
+    );
+  }
 }
 
 hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
 {
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+  delete ir_solver_;
+  ir_solver_ = nullptr;
+
+  delete ir_preconditioner_;
+  ir_preconditioner_ = nullptr;
+
+  delete ir_gram_schmidt_;
+  ir_gram_schmidt_ = nullptr;
+
+  delete ir_vector_handler_;
+  ir_vector_handler_ = nullptr;
+
+  delete ir_matrix_handler_;
+  ir_matrix_handler_ = nullptr;
+#endif
 #if defined(HIOP_USE_CUDA)
   delete cuda_glu_solver_;
   cuda_glu_solver_ = nullptr;
@@ -488,13 +668,13 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
 
         case RefactorizationMode::CUDA_RF:
           // RF setup imports and analyzes the KLU factors.
-          // Perform the initial RF numeric refactorization.
+          // Perform the initial RF numeric refactorization before RF solve.
           status = refactorize_selected_solver();
           break;
 #elif defined(HIOP_USE_HIP)
         case RefactorizationMode::HIP_RF:
-          // HIP RF setup analyzes the imported KLU factors.
-          // Perform the initial RF numeric refactorization.
+          // RF setup imports and analyzes the KLU factors.
+          // Perform the initial RF numeric refactorization before RF solve.
           status = refactorize_selected_solver();
           break;
 #endif
@@ -513,6 +693,25 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
       nlp_->runStats.linsolv.tmFactTime.stop();
       return -1;
     }
+
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+    if(use_ir_) {
+      assert(ir_solver_ != nullptr);
+
+      status = ir_solver_->setup(matrix_);
+
+      if(status != 0) {
+        nlp_->log->printf(
+            hovWarning,
+            "EVLOSER iterative refinement setup failed; "
+            "using the direct solver only.\n"
+        );
+
+        use_ir_ = false;
+        status = 0;
+      }
+    }
+#endif
 
     factorizationSetupSucc_ = 1;
 
@@ -534,6 +733,25 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
       nlp_->runStats.linsolv.tmFactTime.stop();
       return -1;
     }
+
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+    if(use_ir_) {
+      assert(ir_solver_ != nullptr);
+
+      status = ir_solver_->resetMatrix(matrix_);
+
+      if(status != 0) {
+        nlp_->log->printf(
+            hovWarning,
+            "EVLOSER iterative refinement matrix reset failed; "
+            "using the direct solver only.\n"
+        );
+
+        use_ir_ = false;
+        status = 0;
+      }
+    }
+#endif
   }
 
   nlp_->runStats.linsolv.tmFactTime.stop();
@@ -592,6 +810,37 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
 
       nlp_->runStats.linsolv.tmTriuSolves.stop();
       return false;
+    }
+
+    if(use_ir_) {
+      assert(ir_solver_ != nullptr);
+      assert(ir_preconditioner_ != nullptr);
+
+      const int ir_status =
+          ir_solver_->solve(
+              rhs_,
+              solution_
+          );
+
+      if(ir_status != 0) {
+        nlp_->log->printf(
+            hovError,
+            "EVLOSER iterative refinement failed.\n"
+        );
+
+        nlp_->runStats.linsolv.tmTriuSolves.stop();
+        return false;
+      }
+
+      nlp_->log->printf(
+          hovScalars,
+          "EVLOSER IR iterations: %d, "
+          "final relative residual: %e\n",
+          static_cast<int>(
+              ir_solver_->getNumIter()
+          ),
+          ir_solver_->getFinalResidualNorm()
+      );
     }
 
     const double* solution_data =

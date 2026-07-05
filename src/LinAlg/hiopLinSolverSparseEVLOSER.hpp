@@ -62,12 +62,12 @@
 #include <cassert>
 
 /**
- * @brief Implements the HiOp sparse linear solver interface using the
- * configured EVLOSER backend provider.
+ * @brief Implements the HiOp sparse linear solver interface using public
+ * ReSolve solver components.
  *
- * The concrete provider is selected when HiOp is configured. Backend-specific
- * matrix storage, factorization state, and execution resources are owned by
- * the provider rather than by this HiOp-facing wrapper.
+ * HiOp handles matrix conversion and solver orchestration. ReSolve owns
+ * analysis, factorization, refactorization, direct solves, and iterative
+ * refinement.
  *
  * @ingroup LinearSolvers
  */
@@ -75,6 +75,12 @@
 namespace ReSolve
 {
 class LinSolverDirectKLU;
+
+class MatrixHandler;
+class VectorHandler;
+class GramSchmidt;
+class LinSolverIterativeFGMRES;
+class PreconditionerLU;
 
 #ifdef HIOP_USE_CUDA
 class LinSolverDirectCuSolverGLU;
@@ -111,7 +117,7 @@ public:
   virtual ~hiopLinSolverSymSparseEVLOSER();
 
   /**
-   * @brief Notifies the configured provider that the matrix changed.
+   * @brief Updates the ReSolve matrix values and factorization state.
    */
   virtual int matrixChanged();
 
@@ -173,6 +179,7 @@ int* index_convert_extra_Diag2CSR_device_;
 
 int factorizationSetupSucc_;
 bool is_first_call_;
+bool use_ir_;
 
 ReSolve::matrix::Csr* matrix_;
 ReSolve::vector::Vector* rhs_;
@@ -189,6 +196,14 @@ ReSolve::LinSolverDirectCuSolverRf* cuda_rf_solver_;
 #ifdef HIOP_USE_HIP
 ReSolve::LinAlgWorkspaceHIP* hip_workspace_;
 ReSolve::LinSolverDirectRocSolverRf* hip_rf_solver_;
+#endif
+
+#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+ReSolve::MatrixHandler* ir_matrix_handler_;
+ReSolve::VectorHandler* ir_vector_handler_;
+ReSolve::GramSchmidt* ir_gram_schmidt_;
+ReSolve::LinSolverIterativeFGMRES* ir_solver_;
+ReSolve::PreconditionerLU* ir_preconditioner_;
 #endif
 
 RefactorizationMode refactorization_mode_;

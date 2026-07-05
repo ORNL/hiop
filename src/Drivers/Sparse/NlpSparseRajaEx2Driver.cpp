@@ -397,9 +397,9 @@ int main(int argc, char** argv)
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
     }
 
-    // Inner iterative refinement is only used by the embedded ReSolve backend.
+    // Inner iterative refinement for RF-based sparse solver paths.
     if(use_resolve_cuda_rf) {
-      nlp.options->SetIntegerValue("ir_inner_maxit", 20);
+      nlp.options->SetIntegerValue("ir_inner_maxit", 5);
     }
 
     nlp.options->SetStringValue("duals_init", "zero");
