@@ -104,7 +104,6 @@ set(hiopLinAlg_CUSOLVER_LU_SRC
 
 set(hiopLinAlg_EVLOSER_SRC
   hiopLinSolverSparseEVLOSER.cpp
-  hiopLinSolverSparseEVLOSERExternal.cpp
 )
 
 set(hiopLinAlg_CUSOLVER_CHOL_SRC
@@ -191,11 +190,30 @@ if(HIOP_USE_HIP)
   # Reference: https://www.olcf.ornl.gov/wp-content/uploads/2021/01/2021UM-Day-3-Joo-Developing-for-Frontier-using-HIP-on-Spock.pdf
 #  set_source_files_properties(${hiopLinAlg_HIPVECTORKERNELS_SRC} PROPERTIES LANGUAGE HIP)
 
-  set_source_files_properties( ${hiopLinAlg_HIPVECTORKERNELS_SRC} PROPERTIES LANGUAGE CXX)
-  set_source_files_properties( ${hiopLinAlg_HIPVECTORKERNELS_SRC} PROPERTIES COMPILE_FLAGS "-x hip")
+  set_source_files_properties(
+    ${hiopLinAlg_HIPVECTORKERNELS_SRC}
+    PROPERTIES LANGUAGE CXX
+  )
+
+  set_source_files_properties(
+    ${hiopLinAlg_HIPVECTORKERNELS_SRC}
+    PROPERTIES COMPILE_FLAGS "-x hip"
+  )
+
+  if(HIOP_USE_EVLOSER)
+    set_source_files_properties(
+      ${hiopLinAlg_EVLOSER_SRC}
+      PROPERTIES LANGUAGE CXX
+    )
+
+    set_source_files_properties(
+      ${hiopLinAlg_EVLOSER_SRC}
+      PROPERTIES COMPILE_FLAGS "-x hip"
+    )
+  endif()
 
   list(APPEND hiopLinAlg_SRC ${hiopLinAlg_HIPVECTORKERNELS_SRC})
-endif(HIOP_USE_HIP)
+endif()
 
 # Add RAJA/Umpire sources when enabled
 if(HIOP_USE_RAJA)
@@ -208,8 +226,20 @@ if(HIOP_USE_GPU)
   if(HIOP_USE_MAGMA)
     list(APPEND hiopLinAlg_SRC ${hiopLinAlg_MAGMA_SRC})
   endif()
+
   if(HIOP_USE_CUDA)
-    set_source_files_properties(${hiopLinAlg_RAJA_SRC} ${hiopLinAlg_CUSOLVER_SRC} PROPERTIES LANGUAGE CUDA)
+    set_source_files_properties(
+      ${hiopLinAlg_RAJA_SRC}
+      ${hiopLinAlg_CUSOLVER_SRC}
+      PROPERTIES LANGUAGE CUDA
+    )
+
+    if(HIOP_USE_EVLOSER)
+      set_source_files_properties(
+        ${hiopLinAlg_EVLOSER_SRC}
+        PROPERTIES LANGUAGE CUDA
+      )
+    endif()
   endif()
 endif()
 

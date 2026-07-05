@@ -72,10 +72,36 @@
  * @ingroup LinearSolvers
  */
 
+namespace ReSolve
+{
+class LinSolverDirectKLU;
+
+#ifdef HIOP_USE_CUDA
+class LinSolverDirectCuSolverGLU;
+class LinSolverDirectCuSolverRf;
+class LinAlgWorkspaceCUDA;
+#endif
+
+#ifdef HIOP_USE_HIP
+class LinSolverDirectRocSolverRf;
+class LinAlgWorkspaceHIP;
+#endif
+
+namespace matrix
+{
+class Csr;
+}
+
+namespace vector
+{
+class Vector;
+}
+}  // namespace ReSolve
+
 namespace hiop
 {
 
-class hiopLinSolverSparseEVLOSERProvider;
+class hiopMatrixSparse;
 
 class hiopLinSolverSymSparseEVLOSER : public hiopLinSolverSymSparse
 {
@@ -106,7 +132,66 @@ public:
   }
 
 protected:
-  hiopLinSolverSparseEVLOSERProvider* provider_;
+enum class RefactorizationMode
+{
+  CPU_KLU,
+
+#ifdef HIOP_USE_CUDA
+  CUDA_GLU,
+  CUDA_RF,
+#endif
+
+#ifdef HIOP_USE_HIP
+  HIP_RF,
+#endif
+};
+
+int firstCall();
+int update_matrix_values();
+
+void compute_nnz();
+int set_csr_indices_values();
+
+hiopMatrixSparse* host_matrix() const;
+
+int setup_refactorization_solver();
+int refactorize_selected_solver();
+int solve_selected_solver();
+
+hiopMatrixSparse* M_host_;
+
+bool use_device_;
+int n_;
+int nnz_;
+int ordering_;
+
+int* index_convert_CSR2Triplet_host_;
+int* index_convert_extra_Diag2CSR_host_;
+
+int* index_convert_CSR2Triplet_device_;
+int* index_convert_extra_Diag2CSR_device_;
+
+int factorizationSetupSucc_;
+bool is_first_call_;
+
+ReSolve::matrix::Csr* matrix_;
+ReSolve::vector::Vector* rhs_;
+ReSolve::vector::Vector* solution_;
+
+ReSolve::LinSolverDirectKLU* factorization_solver_;
+
+#ifdef HIOP_USE_CUDA
+ReSolve::LinAlgWorkspaceCUDA* cuda_workspace_;
+ReSolve::LinSolverDirectCuSolverGLU* cuda_glu_solver_;
+ReSolve::LinSolverDirectCuSolverRf* cuda_rf_solver_;
+#endif
+
+#ifdef HIOP_USE_HIP
+ReSolve::LinAlgWorkspaceHIP* hip_workspace_;
+ReSolve::LinSolverDirectRocSolverRf* hip_rf_solver_;
+#endif
+
+RefactorizationMode refactorization_mode_;
 };
 
 }  // namespace hiop

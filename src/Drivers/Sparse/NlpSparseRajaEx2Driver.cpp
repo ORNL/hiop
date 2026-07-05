@@ -21,6 +21,7 @@ static bool parse_arguments(int argc,
                             bool& inertia_free,
                             bool& use_resolve_cuda_glu,
                             bool& use_resolve_cuda_rf,
+                            bool& use_evloser_cuda_glu,
                             bool& use_evloser_cuda_rf,
                             bool& use_evloser_hip_rf,
                             bool& use_ginkgo,
@@ -32,6 +33,7 @@ static bool parse_arguments(int argc,
   inertia_free = false;
   use_resolve_cuda_glu = false;
   use_resolve_cuda_rf = false;
+  use_evloser_cuda_glu = false;
   use_evloser_cuda_rf = false;
   use_evloser_hip_rf = false;
   use_ginkgo = false;
@@ -52,6 +54,8 @@ static bool parse_arguments(int argc,
         use_resolve_cuda_glu = true;
       } else if(std::string(argv[4]) == "-resolve_cuda_rf") {
         use_resolve_cuda_rf = true;
+      } else if(std::string(argv[4]) == "-evloser_cuda_glu") {
+        use_evloser_cuda_glu = true;
       } else if(std::string(argv[4]) == "-evloser_cuda_rf") {
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[4]) == "-evloser_hip_rf") {
@@ -81,6 +85,8 @@ static bool parse_arguments(int argc,
         use_resolve_cuda_glu = true;
       } else if(std::string(argv[3]) == "-resolve_cuda_rf") {
         use_resolve_cuda_rf = true;
+      } else if(std::string(argv[3]) == "-evloser_cuda_glu") {
+        use_evloser_cuda_glu = true;
       } else if(std::string(argv[3]) == "-evloser_cuda_rf") {
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[3]) == "-evloser_hip_rf") {
@@ -110,6 +116,8 @@ static bool parse_arguments(int argc,
         use_resolve_cuda_glu = true;
       } else if(std::string(argv[2]) == "-resolve_cuda_rf") {
         use_resolve_cuda_rf = true;
+      } else if(std::string(argv[2]) == "-evloser_cuda_glu") {
+        use_evloser_cuda_glu = true;
       } else if(std::string(argv[2]) == "-evloser_cuda_rf") {
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[2]) == "-evloser_hip_rf") {
@@ -139,6 +147,8 @@ static bool parse_arguments(int argc,
         use_resolve_cuda_glu = true;
       } else if(std::string(argv[1]) == "-resolve_cuda_rf") {
         use_resolve_cuda_rf = true;
+      } else if(std::string(argv[1]) == "-evloser_cuda_glu") {
+        use_evloser_cuda_glu = true;
       } else if(std::string(argv[1]) == "-evloser_cuda_rf") {
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[1]) == "-evloser_hip_rf") {
@@ -163,9 +173,10 @@ static bool parse_arguments(int argc,
   }
 
 #ifndef HIOP_USE_EVLOSER
-  if(use_evloser_cuda_rf || use_evloser_hip_rf) {
+  if(use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf) {
     printf("HiOp built without EVLOSER support. ");
     printf("Using default linear solver ...\n");
+    use_evloser_cuda_glu = false;
     use_evloser_cuda_rf = false;
     use_evloser_hip_rf = false;
   }
@@ -182,6 +193,11 @@ static bool parse_arguments(int argc,
     printf("HiOp built without CUDA support. ");
     printf("Using default instead of ReSolve ...\n");
     use_resolve_cuda_rf = false;
+  }
+  if(use_evloser_cuda_glu) {
+    printf("HiOp built without CUDA support. ");
+    printf("Using default instead of EVLOSER ...\n");
+    use_evloser_cuda_glu = false;
   }
   if(use_evloser_cuda_rf) {
     printf("HiOp built without CUDA support. ");
@@ -200,32 +216,49 @@ static bool parse_arguments(int argc,
 #endif
 
   // Sparse LU solvers require the inertia-free approach.
-  if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_evloser_cuda_rf || use_evloser_hip_rf) && !(inertia_free)) {
+  if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf) && !(inertia_free)) {
     inertia_free = true;
     printf("Selected LU sparse solver requires inertia free approach. ");
     printf("Enabling now ...\n");
   }
 
-  // GLU and RF still share one refactorization option, so keep this conflict check explicit.
-  if(use_resolve_cuda_glu && (use_resolve_cuda_rf || use_evloser_cuda_rf || use_evloser_hip_rf)) {
-    use_resolve_cuda_rf = false;
+  // ReSolve and EVLOSER select different solver classes.
+  // If both are requested, keep ReSolve.
+  if((use_resolve_cuda_glu || use_resolve_cuda_rf) &&
+    (use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf)) {
+    use_evloser_cuda_glu = false;
     use_evloser_cuda_rf = false;
     use_evloser_hip_rf = false;
-    printf("You can select either GLU or RF refactorization, not both. ");
-    printf("Using default GLU refactorization ...\n");
-  }
 
-  // ReSolve RF and EVLOSER RF select different backend classes, so only one should be active.
-  if(use_resolve_cuda_rf && (use_evloser_cuda_rf || use_evloser_hip_rf)) {
-    use_evloser_cuda_rf = false;
-    use_evloser_hip_rf = false;
     printf("You can select either ReSolve or EVLOSER, not both. ");
     printf("Using ReSolve ...\n");
   }
 
-  // EVLOSER uses separate flags to select the CUDA or HIP RF backend.
+  // ReSolve supports either CUDA GLU or CUDA RF.
+  // If both are requested, keep GLU.
+  if(use_resolve_cuda_glu && use_resolve_cuda_rf) {
+    use_resolve_cuda_rf = false;
+
+    printf("You can select either CUDA GLU or CUDA RF with ReSolve, not both. ");
+    printf("Using CUDA GLU ...\n");
+  }
+
+  // EVLOSER supports either CUDA GLU or an RF backend.
+  // If both are requested, keep GLU.
+  if(use_evloser_cuda_glu &&
+    (use_evloser_cuda_rf || use_evloser_hip_rf)) {
+    use_evloser_cuda_rf = false;
+    use_evloser_hip_rf = false;
+
+    printf("You can select either GLU or RF refactorization with EVLOSER, not both. ");
+    printf("Using CUDA GLU ...\n");
+  }
+
+  // EVLOSER RF can use either CUDA or HIP.
+  // If both are requested, keep CUDA.
   if(use_evloser_cuda_rf && use_evloser_hip_rf) {
     use_evloser_hip_rf = false;
+
     printf("You can select either CUDA RF or HIP RF with EVLOSER, not both. ");
     printf("Using CUDA RF ...\n");
   }
@@ -266,6 +299,9 @@ static void usage(const char* exeName)
       "  '-resolve_cuda_rf' : use ReSolve linear solver with KLU factorization and cusolverRf refactorization "
       "[optional]\n");
   printf(
+      "  '-evloser_cuda_glu': use EVLOSER linear solver with KLU factorization and cusolverGLU refactorization "
+      "[optional]\n");
+  printf(
       "  '-evloser_cuda_rf' : use EVLOSER linear solver with KLU factorization and cusolverRf refactorization "
       "[optional]\n");
   printf(
@@ -303,6 +339,7 @@ int main(int argc, char** argv)
   bool inertia_free = false;
   bool use_resolve_cuda_glu = false;
   bool use_resolve_cuda_rf = false;
+  bool use_evloser_cuda_glu = false;
   bool use_evloser_cuda_rf = false;
   bool use_evloser_hip_rf = false;
   bool use_ginkgo = false;
@@ -315,6 +352,7 @@ int main(int argc, char** argv)
                       inertia_free,
                       use_resolve_cuda_glu,
                       use_resolve_cuda_rf,
+                      use_evloser_cuda_glu,
                       use_evloser_cuda_rf,
                       use_evloser_hip_rf,
                       use_ginkgo,
@@ -342,7 +380,7 @@ int main(int argc, char** argv)
     // lsq initialization of the duals fails for this example since the Jacobian is rank deficient
     // use zero initialization
     // EVLOSER uses the same refactorization option string; the solver name selects the backend.
-    const bool use_evloser = use_evloser_cuda_rf || use_evloser_hip_rf;
+    const bool use_evloser = use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf;
 
     if(use_evloser) {
       nlp.options->SetStringValue("linear_solver_sparse", "evloser");
@@ -350,7 +388,11 @@ int main(int argc, char** argv)
       nlp.options->SetStringValue("linear_solver_sparse", "resolve");
     }
 
-    if(use_resolve_cuda_rf || use_evloser) {
+    if(use_resolve_cuda_glu || use_evloser_cuda_glu) {
+      nlp.options->SetStringValue("resolve_refactorization", "glu");
+    } else if(use_resolve_cuda_rf ||
+              use_evloser_cuda_rf ||
+              use_evloser_hip_rf) {
       nlp.options->SetStringValue("resolve_refactorization", "rf");
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
     }
