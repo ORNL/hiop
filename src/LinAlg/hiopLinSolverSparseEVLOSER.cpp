@@ -110,45 +110,11 @@ bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void*
   return false;
 }
 
-bool copy_device_to_device(hiopNlpFormulation* nlp,
-                           void* destination,
-                           const void* source,
-                           size_t bytes,
-                           const char* operation)
-{
-  const cudaError_t status = cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToDevice);
-
-  if(status == cudaSuccess) {
-    return true;
-  }
-
-  nlp->log->printf(hovError, "CUDA failure during %s: %s\n", operation, cudaGetErrorString(status));
-
-  return false;
-}
-
 #elif defined(HIOP_USE_HIP)
 
 bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void* source, size_t bytes, const char* operation)
 {
   const hipError_t status = hipMemcpy(destination, source, bytes, hipMemcpyDeviceToHost);
-
-  if(status == hipSuccess) {
-    return true;
-  }
-
-  nlp->log->printf(hovError, "HIP failure during %s: %s\n", operation, hipGetErrorString(status));
-
-  return false;
-}
-
-bool copy_device_to_device(hiopNlpFormulation* nlp,
-                           void* destination,
-                           const void* source,
-                           size_t bytes,
-                           const char* operation)
-{
-  const hipError_t status = hipMemcpy(destination, source, bytes, hipMemcpyDeviceToDevice);
 
   if(status == hipSuccess) {
     return true;
@@ -843,26 +809,16 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
       );
     }
 
-    const double* solution_data =
-        solution_->getData(ReSolve::memory::DEVICE);
-
-    if(solution_data == nullptr) {
+    if(solution_->copyToExternal(
+          x_data,
+          ReSolve::memory::DEVICE,
+          ReSolve::memory::DEVICE
+      ) != 0) {
       nlp_->log->printf(
           hovError,
-          "Failed to access the ReSolve device solution.\n"
+          "Failed to copy the ReSolve device solution into HiOp.\n"
       );
 
-      nlp_->runStats.linsolv.tmTriuSolves.stop();
-      return false;
-    }
-
-    if(!copy_device_to_device(
-           nlp_,
-           x_data,
-           solution_data,
-           sizeof(double) * n_,
-           "copying the ReSolve solution into HiOp"
-       )) {
       nlp_->runStats.linsolv.tmTriuSolves.stop();
       return false;
     }
@@ -872,26 +828,19 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
   }
 #endif
 
-  double* rhs_data =
-      rhs_->getData(ReSolve::memory::HOST);
-
-  if(rhs_data == nullptr) {
+  if(rhs_->copyFromExternal(
+         x_data,
+         ReSolve::memory::HOST,
+         ReSolve::memory::HOST
+     ) != 0) {
     nlp_->log->printf(
         hovError,
-        "Failed to access the ReSolve host right-hand side.\n"
+        "Failed to copy the host right-hand side into ReSolve.\n"
     );
 
     nlp_->runStats.linsolv.tmTriuSolves.stop();
     return false;
   }
-
-  std::copy(
-      x_data,
-      x_data + n_,
-      rhs_data
-  );
-
-  rhs_->setDataUpdated(ReSolve::memory::HOST);
 
   if(solve_selected_solver() != 0) {
     nlp_->log->printf(
@@ -903,24 +852,19 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
     return false;
   }
 
-  const double* solution_data =
-      solution_->getData(ReSolve::memory::HOST);
-
-  if(solution_data == nullptr) {
+  if(solution_->copyToExternal(
+         x_data,
+         ReSolve::memory::HOST,
+         ReSolve::memory::HOST
+     ) != 0) {
     nlp_->log->printf(
         hovError,
-        "Failed to access the ReSolve host solution.\n"
+        "Failed to copy the ReSolve host solution into HiOp.\n"
     );
 
     nlp_->runStats.linsolv.tmTriuSolves.stop();
     return false;
   }
-
-  std::copy(
-      solution_data,
-      solution_data + n_,
-      x_data
-  );
 
   nlp_->runStats.linsolv.tmTriuSolves.stop();
   return true;
