@@ -154,7 +154,7 @@ bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void*
 template<typename T, typename I>
 __global__ void mapArraysKernel(T* dst, const T* src, const I* mapidx, I n)
 {
-  I tid = blockDim.x * blockIdx.x + threadIdx.x;
+  I tid = static_cast<I>(blockDim.x * blockIdx.x + threadIdx.x);
 
   if(tid < n) {
     dst[tid] = src[mapidx[tid]];
@@ -176,7 +176,7 @@ __global__ void mapArraysKernel(T* dst, const T* src, const I* mapidx, I n)
 template<typename T, typename I>
 __global__ void addToArrayKernel(T* dst, const T* src, const I* mapidx, I n, I nnz)
 {
-  I tid = blockDim.x * blockIdx.x + threadIdx.x;
+  I tid = static_cast<I>(blockDim.x * blockIdx.x + threadIdx.x);
 
   if(tid < n) {
     if(mapidx[tid] != -1) {
@@ -439,11 +439,13 @@ hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
   }
 #elif defined(HIOP_USE_HIP)
   if(index_convert_CSR2Triplet_device_ != nullptr) {
-    hipFree(index_convert_CSR2Triplet_device_);
+    const hipError_t status = hipFree(index_convert_CSR2Triplet_device_);
+    (void)status;
   }
 
   if(index_convert_extra_Diag2CSR_device_ != nullptr) {
-    hipFree(index_convert_extra_Diag2CSR_device_);
+    const hipError_t status = hipFree(index_convert_extra_Diag2CSR_device_);
+    (void)status;
   }
 #endif
 }
@@ -675,7 +677,7 @@ int hiopLinSolverSymSparseEVLOSER::firstCall()
     if(!copy_device_to_host(nlp_,
                             M_host_->M(),
                             M_->M(),
-                            sizeof(double) * M_->numberOfNonzeros(),
+                            sizeof(double) * static_cast<size_t>(M_->numberOfNonzeros()),
                             "copying EVLOSER values to the host")) {
       return -1;
     }
@@ -683,7 +685,7 @@ int hiopLinSolverSymSparseEVLOSER::firstCall()
     if(!copy_device_to_host(nlp_,
                             M_host_->i_row(),
                             M_->i_row(),
-                            sizeof(index_type) * M_->numberOfNonzeros(),
+                            sizeof(index_type) * static_cast<size_t>(M_->numberOfNonzeros()),
                             "copying EVLOSER row indices to the host")) {
       return -1;
     }
@@ -691,7 +693,7 @@ int hiopLinSolverSymSparseEVLOSER::firstCall()
     if(!copy_device_to_host(nlp_,
                             M_host_->j_col(),
                             M_->j_col(),
-                            sizeof(index_type) * M_->numberOfNonzeros(),
+                            sizeof(index_type) * static_cast<size_t>(M_->numberOfNonzeros()),
                             "copying EVLOSER column indices to the host")) {
       return -1;
     }
@@ -824,7 +826,13 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
     const int blocksize = 512;
     int gridsize = (nnz_ + blocksize - 1) / blocksize;
 
-    mapArraysKernel<double, int><<<gridsize, blocksize>>>(values, source_values, index_convert_CSR2Triplet_device_, nnz_);
+    mapArraysKernel<double, int>
+      <<<static_cast<unsigned int>(gridsize),
+        static_cast<unsigned int>(blocksize)>>>(
+          values,
+          source_values,
+          index_convert_CSR2Triplet_device_,
+          nnz_);
 
 #if defined(HIOP_USE_CUDA)
     cudaError_t launch_status = cudaGetLastError();
@@ -849,7 +857,9 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
     gridsize = (n_ + blocksize - 1) / blocksize;
 
     addToArrayKernel<double, int>
-        <<<gridsize, blocksize>>>(values, source_values, index_convert_extra_Diag2CSR_device_, n_, M_->numberOfNonzeros());
+        <<<static_cast<unsigned int>(gridsize),
+           static_cast<unsigned int>(blocksize)>>>(
+            values, source_values, index_convert_extra_Diag2CSR_device_, n_, M_->numberOfNonzeros());
 
 #if defined(HIOP_USE_CUDA)
     launch_status = cudaGetLastError();
@@ -964,11 +974,11 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
   assert(nnz_ == row_ptr[n_]);
 
-  index_convert_CSR2Triplet_host_ = new int[nnz_];
+  index_convert_CSR2Triplet_host_ = new int[static_cast<size_t>(nnz_)];
 
-  index_convert_extra_Diag2CSR_host_ = new int[n_];
+  index_convert_extra_Diag2CSR_host_ = new int[static_cast<size_t>(n_)];
 
-  int* nnz_each_row_tmp = new int[n_]{0};
+  int* nnz_each_row_tmp = new int[static_cast<size_t>(n_)]{0};
 
   int total_nnz_tmp{0};
   int nnz_tmp{0};
@@ -1032,7 +1042,7 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
       total_nnz_tmp++;
 
-      std::vector<int> permutation(row_ptr[i + 1] - row_ptr[i]);
+      std::vector<int> permutation(static_cast<size_t>(row_ptr[i + 1] - row_ptr[i]));
 
       std::iota(permutation.begin(), permutation.end(), 0);
 
@@ -1049,6 +1059,7 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
   }
 
   assert(total_nnz_tmp == nnz_);
+  (void)total_nnz_tmp;
 
 #if defined(HIOP_USE_CUDA)
   if(use_device_) {
@@ -1109,7 +1120,7 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
   }
 #elif defined(HIOP_USE_HIP)
   if(use_device_) {
-    hipError_t status = hipMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), sizeof(int) * nnz_);
+    hipError_t status = hipMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), sizeof(int) * static_cast<size_t>(nnz_));
 
     if(status != hipSuccess) {
       nlp_->log->printf(hovError, "HIP failure allocating the CSR-to-triplet mapping: %s\n", hipGetErrorString(status));
@@ -1118,12 +1129,12 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       return -1;
     }
 
-    status = hipMalloc(reinterpret_cast<void**>(&index_convert_extra_Diag2CSR_device_), sizeof(int) * n_);
+    status = hipMalloc(reinterpret_cast<void**>(&index_convert_extra_Diag2CSR_device_), sizeof(int) * static_cast<size_t>(n_));
 
     if(status != hipSuccess) {
       nlp_->log->printf(hovError, "HIP failure allocating the diagonal-to-CSR mapping: %s\n", hipGetErrorString(status));
 
-      hipFree(index_convert_CSR2Triplet_device_);
+      status = hipFree(index_convert_CSR2Triplet_device_);
       index_convert_CSR2Triplet_device_ = nullptr;
 
       delete[] nnz_each_row_tmp;
@@ -1132,14 +1143,14 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
     status = hipMemcpy(index_convert_CSR2Triplet_device_,
                        index_convert_CSR2Triplet_host_,
-                       sizeof(int) * nnz_,
+                       sizeof(int) * static_cast<size_t>(nnz_),
                        hipMemcpyHostToDevice);
 
     if(status != hipSuccess) {
       nlp_->log->printf(hovError, "HIP failure copying the CSR-to-triplet mapping: %s\n", hipGetErrorString(status));
 
-      hipFree(index_convert_CSR2Triplet_device_);
-      hipFree(index_convert_extra_Diag2CSR_device_);
+      status = hipFree(index_convert_CSR2Triplet_device_);
+      status = hipFree(index_convert_extra_Diag2CSR_device_);
       index_convert_CSR2Triplet_device_ = nullptr;
       index_convert_extra_Diag2CSR_device_ = nullptr;
 
@@ -1149,14 +1160,14 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
     status = hipMemcpy(index_convert_extra_Diag2CSR_device_,
                        index_convert_extra_Diag2CSR_host_,
-                       sizeof(int) * n_,
+                       sizeof(int) * static_cast<size_t>(n_),
                        hipMemcpyHostToDevice);
 
     if(status != hipSuccess) {
       nlp_->log->printf(hovError, "HIP failure copying the diagonal-to-CSR mapping: %s\n", hipGetErrorString(status));
 
-      hipFree(index_convert_CSR2Triplet_device_);
-      hipFree(index_convert_extra_Diag2CSR_device_);
+      status = hipFree(index_convert_CSR2Triplet_device_);
+      status = hipFree(index_convert_extra_Diag2CSR_device_);
       index_convert_CSR2Triplet_device_ = nullptr;
       index_convert_extra_Diag2CSR_device_ = nullptr;
 
