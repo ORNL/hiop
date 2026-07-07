@@ -216,7 +216,8 @@ static bool parse_arguments(int argc,
 #endif
 
   // Sparse LU solvers require the inertia-free approach.
-  if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf) && !(inertia_free)) {
+  if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf) &&
+     !(inertia_free)) {
     inertia_free = true;
     printf("Selected LU sparse solver requires inertia free approach. ");
     printf("Enabling now ...\n");
@@ -224,8 +225,7 @@ static bool parse_arguments(int argc,
 
   // ReSolve and EVLOSER select different solver classes.
   // If both are requested, keep ReSolve.
-  if((use_resolve_cuda_glu || use_resolve_cuda_rf) &&
-    (use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf)) {
+  if((use_resolve_cuda_glu || use_resolve_cuda_rf) && (use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf)) {
     use_evloser_cuda_glu = false;
     use_evloser_cuda_rf = false;
     use_evloser_hip_rf = false;
@@ -245,8 +245,7 @@ static bool parse_arguments(int argc,
 
   // EVLOSER supports either CUDA GLU or an RF backend.
   // If both are requested, keep GLU.
-  if(use_evloser_cuda_glu &&
-    (use_evloser_cuda_rf || use_evloser_hip_rf)) {
+  if(use_evloser_cuda_glu && (use_evloser_cuda_rf || use_evloser_hip_rf)) {
     use_evloser_cuda_rf = false;
     use_evloser_hip_rf = false;
 
@@ -390,9 +389,7 @@ int main(int argc, char** argv)
 
     if(use_resolve_cuda_glu || use_evloser_cuda_glu) {
       nlp.options->SetStringValue("resolve_refactorization", "glu");
-    } else if(use_resolve_cuda_rf ||
-              use_evloser_cuda_rf ||
-              use_evloser_hip_rf) {
+    } else if(use_resolve_cuda_rf || use_evloser_cuda_rf || use_evloser_hip_rf) {
       nlp.options->SetStringValue("resolve_refactorization", "rf");
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
     }
