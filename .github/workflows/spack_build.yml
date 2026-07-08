@@ -4,7 +4,7 @@ on: [pull_request]
 
 env:
   SPACK_COLOR: always
-  REGISTRY: ghcr.io/llnl
+  REGISTRY: ghcr.io/ornl
   SPACK_CACHE: /opt/spack-cache
   tempdir: /opt/spack-cache
   TMP: /opt/spack-cache
