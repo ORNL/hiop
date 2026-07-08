@@ -163,7 +163,7 @@ jobs:
         run: spack -e . mirror set --oci-username ${{ env.USERNAME }} --oci-password "${{ secrets.GITHUB_TOKEN }}" local-buildcache
 
       - name: Trust keys
-        run: spack -e . -y buildcache keys --install --trust
+        run: spack -e . buildcache keys --install --trust --force
 
       - name: Find external packages
         run: spack -e . external find --all --exclude python --exclude curl --exclude openssl
