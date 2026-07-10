@@ -530,6 +530,7 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
         case RefactorizationMode::CPU_KLU:
           break;
 
+#ifdef HIOP_USE_CUDA
         case RefactorizationMode::CUDA_GLU:
           // ReSolve's LinSolverDirectCuSolverGLU::setup() performs the initial
           // cusolverSpDgluReset() and cusolverSpDgluFactor(), so no separate
@@ -541,12 +542,15 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
           // the first numerical refactorization.
           status = refactorize_selected_solver();
           break;
+#endif
 
+#ifdef HIOP_USE_HIP
         case RefactorizationMode::HIP_RF:
           // RF setup imports and analyzes the KLU factors but does not perform
           // the first numerical refactorization.
           status = refactorize_selected_solver();
           break;
+#endif
       }
     }
 

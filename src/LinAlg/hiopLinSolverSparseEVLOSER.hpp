@@ -150,9 +150,15 @@ protected:
   enum class RefactorizationMode
   {
     CPU_KLU,
+
+  #ifdef HIOP_USE_CUDA
     CUDA_GLU,
     CUDA_RF,
+  #endif
+
+  #ifdef HIOP_USE_HIP
     HIP_RF,
+  #endif
   };
 
   /** Build the CSR matrix and perform one-time KLU setup and symbolic analysis. */
