@@ -902,8 +902,10 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 
     return 0;
   }
-#endif
+#endif  // defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
 
+  // Update values on the host when device execution is unavailable
+  // or not selected at runtime.
   double* values = matrix_->getValues(ReSolve::memory::HOST);
 
   if(values == nullptr) {
@@ -936,8 +938,10 @@ void hiopLinSolverSymSparseEVLOSER::compute_nnz()
   hiopMatrixSparse* source = host_matrix();
   assert(source != nullptr);
 
+  // Reserve one diagonal CSR entry per row.
   nnz_ = n_;
 
+  // Count both symmetric CSR positions for each off-diagonal triplet.
   for(int k = 0; k < source->numberOfNonzeros() - n_; ++k) {
     if(source->i_row()[k] != source->j_col()[k]) {
       nnz_ += 2;
@@ -961,6 +965,9 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 
   std::fill(row_ptr, row_ptr + n_ + 1, 0);
 
+  // Build CSR row offsets by counting both symmetric positions for each
+  // off-diagonal triplet, reserving one diagonal entry per row, and
+  // prefix-summing the row counts.
   for(int k = 0; k < source->numberOfNonzeros() - n_; ++k) {
     if(source->i_row()[k] != source->j_col()[k]) {
       row_ptr[source->i_row()[k] + 1]++;
@@ -993,6 +1000,8 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
     index_convert_extra_Diag2CSR_host_[i] = -1;
   }
 
+  // Populate CSR values and mappings from the structural triplets,
+  // expanding each off-diagonal entry into both symmetric positions.
   for(int k = 0; k < source->numberOfNonzeros() - n_; ++k) {
     rowID_tmp = source->i_row()[k];
     colID_tmp = source->j_col()[k];
@@ -1032,6 +1041,8 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
     }
   }
 
+  // Insert any diagonal missing from the structural triplets, then sort
+  // the completed row and reorder its values and mappings consistently.
   for(int i = 0; i < n_; ++i) {
     if(nnz_each_row_tmp[i] != row_ptr[i + 1] - row_ptr[i]) {
       assert(nnz_each_row_tmp[i] == row_ptr[i + 1] - row_ptr[i] - 1);
