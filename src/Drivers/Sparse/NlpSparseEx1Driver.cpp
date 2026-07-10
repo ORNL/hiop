@@ -15,7 +15,6 @@ static bool parse_arguments(int argc,
                             double& scal,
                             bool& self_check,
                             bool& use_pardiso,
-                            bool& use_cusolver,
                             bool& use_ginkgo,
                             bool& use_ginkgo_cuda,
                             bool& use_ginkgo_hip,
@@ -48,8 +47,6 @@ static bool parse_arguments(int argc,
         self_check = true;
       } else if(std::string(argv[4]) == "-pardiso") {
         use_pardiso = true;
-      } else if(std::string(argv[4]) == "-cusolver") {
-        use_cusolver = true;
       } else if(std::string(argv[4]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[4]) == "-ginkgo_cuda") {
@@ -68,8 +65,6 @@ static bool parse_arguments(int argc,
         self_check = true;
       } else if(std::string(argv[3]) == "-pardiso") {
         use_pardiso = true;
-      } else if(std::string(argv[3]) == "-cusolver") {
-        use_cusolver = true;
       } else if(std::string(argv[3]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[3]) == "-ginkgo_cuda") {
@@ -88,8 +83,6 @@ static bool parse_arguments(int argc,
         self_check = true;
       } else if(std::string(argv[2]) == "-pardiso") {
         use_pardiso = true;
-      } else if(std::string(argv[2]) == "-cusolver") {
-        use_cusolver = true;
       } else if(std::string(argv[2]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[2]) == "-ginkgo_cuda") {
@@ -116,12 +109,6 @@ static bool parse_arguments(int argc,
     scal = 1.0;
   }
 
-  if(use_cusolver && use_pardiso) {
-    printf("Selected both, cuSOLVER and Pardiso. ");
-    printf("You can select only one linear solver.\n\n");
-    return false;
-  }
-
 // If Pardiso is not available de-select it.
 #ifndef HIOP_USE_PARDISO
   if(use_pardiso) {
@@ -137,16 +124,6 @@ static bool parse_arguments(int argc,
     use_ginkgo = false;
   }
 #endif
-
-// If HiOp is built without CUDA de-select cuSOLVER.
-#ifndef HIOP_USE_RESOLVE
-  if(use_cusolver) {
-    printf("HiOp built without support for ReSolve. ");
-    printf("Using default linear solver ...\n");
-    use_cusolver = false;
-  }
-#endif
-
   return true;
 };
 
@@ -160,10 +137,7 @@ static void usage(const char* exeName)
   printf(
       "  'scal_fact': scaling factor used for objective function and constraints [optional, "
       "default is 1.0]\n");
-  printf(
-      "  '-pardiso' or '-cusolver': use Pardiso or cuSOLVER "
-      "as the linear solver [optional]\n");
-  printf("  '-cusolver': use cuSOLVER as the linear solver [optional]\n");
+  printf("  '-pardiso': use Pardiso as the linear solver [optional]\n");
   printf("  '-fr': force to reset feasibility in the 1st iteration [optional]\n");
   printf(
       "  '-selfcheck': compares the optimal objective with a previously saved value for the "
@@ -188,7 +162,6 @@ int main(int argc, char** argv)
 #endif
   bool selfCheck = false;
   bool use_pardiso = false;
-  bool use_cusolver = false;
   bool use_ginkgo = false;
   bool use_ginkgo_cuda = false;
   bool use_ginkgo_hip = false;
@@ -202,7 +175,6 @@ int main(int argc, char** argv)
                       scal,
                       selfCheck,
                       use_pardiso,
-                      use_cusolver,
                       use_ginkgo,
                       use_ginkgo_cuda,
                       use_ginkgo_hip,
@@ -230,22 +202,7 @@ int main(int argc, char** argv)
   if(use_pardiso) {
     nlp.options->SetStringValue("linear_solver_sparse", "pardiso");
   }
-  if(use_cusolver) {
-    nlp.options->SetStringValue("duals_init", "zero");
-    nlp.options->SetStringValue("linsol_mode", "speculative");
-    nlp.options->SetStringValue("linear_solver_sparse", "resolve");
-    nlp.options->SetStringValue("resolve_refactorization", "rf");
-    nlp.options->SetIntegerValue("ir_inner_maxit", 100);
-    nlp.options->SetNumericValue("ir_inner_tol", 1e-8);
-    nlp.options->SetIntegerValue("ir_inner_restart", 20);
-    nlp.options->SetIntegerValue("ir_inner_conv_cond", 2);
-    nlp.options->SetStringValue("ir_inner_gs_scheme", "cgs2");
-    nlp.options->SetStringValue("compute_mode", "hybrid");
-    // LU solver needs to use inertia free approach
-    nlp.options->SetStringValue("fact_acceptor", "inertia_free");
-    nlp.options->SetIntegerValue("ir_outer_maxit", 0);
-    nlp.options->SetIntegerValue("verbosity_level", 3);
-  }
+
   if(use_ginkgo) {
     nlp.options->SetStringValue("linsol_mode", "speculative");
     nlp.options->SetStringValue("linear_solver_sparse", "ginkgo");

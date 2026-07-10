@@ -68,13 +68,6 @@ struct hiopVersion
       false;
 #endif
 
-  static constexpr bool useReSolve =
-#ifdef HIOP_USE_RESOLVE
-      true;
-#else
-      false;
-#endif
-
   static constexpr bool useGINKGO =
 #ifdef HIOP_USE_GINKGO
       true;
@@ -100,7 +93,7 @@ struct hiopVersion
        << "Built with:"
        << "\nGPU: " << fmt(useGPU) << "\nMPI: " << fmt(useMPI) << "\nMAGMA: " << fmt(useMagma) << "\nRAJA: " << fmt(useRAJA)
        << "\nSparse: " << fmt(useSparse) << "\nCOINHSL: " << fmt(useCOINHSL) << "\nSTRUMPACK: " << fmt(useSTRUMPACK)
-       << "\nPARDISO: " << fmt(usePARDISO) << "\nReSolve: " << fmt(useReSolve) << "\n";
+       << "\nPARDISO: " << fmt(usePARDISO) << "\n";
     return ss.str();
   }
 };
