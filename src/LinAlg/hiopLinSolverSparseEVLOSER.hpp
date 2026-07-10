@@ -49,6 +49,7 @@
 /**
  * @file hiopLinSolverSparseEVLOSER.hpp
  *
+ * @author Tamar DeWilde <dewildetc@ornl.gov>
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
  * @author Slaven Peles <peless@ornl.gov>, ORNL
  *
@@ -149,15 +150,9 @@ protected:
   enum class RefactorizationMode
   {
     CPU_KLU,
-
-#ifdef HIOP_USE_CUDA
     CUDA_GLU,
     CUDA_RF,
-#endif
-
-#ifdef HIOP_USE_HIP
     HIP_RF,
-#endif
   };
 
   /** Build the CSR matrix and perform one-time KLU setup and symbolic analysis. */
@@ -224,14 +219,11 @@ protected:
   ReSolve::LinAlgWorkspaceHIP* hip_workspace_;
   ReSolve::LinSolverDirectRocSolverRf* hip_rf_solver_;
 #endif
-
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
   ReSolve::MatrixHandler* ir_matrix_handler_;
   ReSolve::VectorHandler* ir_vector_handler_;
   ReSolve::GramSchmidt* ir_gram_schmidt_;
   ReSolve::LinSolverIterativeFGMRES* ir_solver_;
   ReSolve::PreconditionerLU* ir_preconditioner_;
-#endif
 
   RefactorizationMode refactorization_mode_;
 };

@@ -395,7 +395,7 @@ int main(int argc, char** argv)
     }
 
     // Inner iterative refinement for RF-based sparse solver paths.
-    if(use_resolve_cuda_rf) {
+    if(use_resolve_cuda_rf || use_evloser_cuda_rf || use_evloser_hip_rf) {
       nlp.options->SetIntegerValue("ir_inner_maxit", 5);
     }
 

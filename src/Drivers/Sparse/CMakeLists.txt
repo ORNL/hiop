@@ -18,6 +18,7 @@ add_executable(NlpSparseEx4.exe NlpSparseEx4.cpp NlpSparseEx4Driver.cpp)
 target_link_libraries(NlpSparseEx4.exe HiOp::HiOp)
 
 if(HIOP_USE_RAJA)
+  # TODO: Revisit this logic when legacy ReSolve is removed
   if(HIOP_USE_GPU AND (HIOP_USE_CUDA OR HIOP_USE_HIP) AND (HIOP_USE_RESOLVE OR HIOP_USE_EVLOSER))
     if(HIOP_USE_CUDA)
       set_source_files_properties(
@@ -74,6 +75,9 @@ add_test(NAME NlpSparse2_1 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "
 add_test(NAME NlpSparse2_2 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "500" "-inertiafree" "-selfcheck")
 if(HIOP_USE_EVLOSER)
   add_test(NAME NlpSparse2_EVLOSER_CPU COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "500" "-evloser" "-inertiafree" "-selfcheck")
+  if(HIOP_USE_CUDA)
+    add_test(NAME NlpSparse2_EVLOSER_GPU COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "500" "-evloser" "-inertiafree" "-selfcheck")
+  endif()
 endif()
 if(HIOP_USE_CUDA)
   add_test(NAME NlpSparse2_3 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx2.exe>" "500" "-cusolver" "-inertiafree" "-selfcheck")

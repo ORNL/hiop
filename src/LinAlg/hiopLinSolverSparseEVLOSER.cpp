@@ -49,6 +49,10 @@
 /**
  * @file hiopLinSolverSparseEVLOSER.cpp
  *
+ * @author Tamar DeWilde <dewildetc@ornl.gov>
+ * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
+ * @author Slaven Peles <peless@ornl.gov>, ORNL
+ *
  * @brief Sparse symmetric linear solver adapter for ReSolve's public API.
  *
  * The adapter converts HiOp's symmetric triplet matrix to CSR, performs the
@@ -68,21 +72,20 @@
 #include <resolve/LinSolverDirectKLU.hpp>
 #include <resolve/matrix/Csr.hpp>
 #include <resolve/vector/Vector.hpp>
-
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
 #include <resolve/GramSchmidt.hpp>
 #include <resolve/LinSolverIterativeFGMRES.hpp>
 #include <resolve/PreconditionerLU.hpp>
 #include <resolve/matrix/MatrixHandler.hpp>
 #include <resolve/vector/VectorHandler.hpp>
-#endif
 
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
 #include <cuda_runtime.h>
 #include <resolve/LinSolverDirectCuSolverGLU.hpp>
 #include <resolve/LinSolverDirectCuSolverRf.hpp>
 #include <resolve/workspace/LinAlgWorkspaceCUDA.hpp>
-#elif defined(HIOP_USE_HIP)
+#endif
+
+#ifdef HIOP_USE_HIP
 #include <hip/hip_runtime.h>
 #include <resolve/LinSolverDirectRocSolverRf.hpp>
 #include <resolve/workspace/LinAlgWorkspaceHIP.hpp>
@@ -107,8 +110,7 @@ namespace
  * Runtime failures are reported through HiOp's logger and propagated to the
  * caller rather than being hidden behind debug-only assertions.
  */
-#if defined(HIOP_USE_CUDA)
-
+#ifdef HIOP_USE_CUDA
 bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void* source, size_t bytes, const char* operation)
 {
   const cudaError_t status = cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost);
@@ -121,9 +123,9 @@ bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void*
 
   return false;
 }
+#endif
 
-#elif defined(HIOP_USE_HIP)
-
+#ifdef HIOP_USE_HIP
 bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void* source, size_t bytes, const char* operation)
 {
   const hipError_t status = hipMemcpy(destination, source, bytes, hipMemcpyDeviceToHost);
@@ -136,10 +138,9 @@ bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void*
 
   return false;
 }
-
 #endif
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+#if defined(HIOP_USE_GPU)
 
 /**
  * @brief Gather source values into a destination ordering.
@@ -207,21 +208,21 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       rhs_(nullptr),
       solution_(nullptr),
       factorization_solver_(nullptr),
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
       cuda_workspace_(nullptr),
       cuda_glu_solver_(nullptr),
       cuda_rf_solver_(nullptr),
-#elif defined(HIOP_USE_HIP)
+#endif
+#ifdef HIOP_USE_HIP
       hip_workspace_(nullptr),
       hip_rf_solver_(nullptr),
 #endif
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+
       ir_matrix_handler_(nullptr),
       ir_vector_handler_(nullptr),
       ir_gram_schmidt_(nullptr),
       ir_solver_(nullptr),
       ir_preconditioner_(nullptr),
-#endif
       refactorization_mode_(RefactorizationMode::CPU_KLU)
 {
   const std::string mem_space = nlp_->options->GetString("mem_space");
@@ -241,10 +242,10 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
 
   const std::string ordering = nlp_->options->GetString("linear_solver_sparse_ordering");
 
-  int ordering_value = 1;
+  int ordering_method = 1;
 
   if(ordering == "amd-ssparse") {
-    ordering_value = 0;
+    ordering_method = 0;
   } else if(ordering != "colamd-ssparse") {
     nlp_->log->printf(hovWarning,
                       "Ordering %s is not supported by EVLOSER; "
@@ -257,10 +258,10 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
 #endif
 
   factorization_solver_ = new ReSolve::LinSolverDirectKLU();
-  factorization_solver_->setOrdering(ordering_value);
+  factorization_solver_->setOrdering(ordering_method);
   factorization_solver_->setHaltIfSingular(true);
 
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
   if(use_device_) {
     cuda_workspace_ = new ReSolve::LinAlgWorkspaceCUDA();
     cuda_workspace_->initializeHandles();
@@ -275,7 +276,9 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       cuda_glu_solver_ = new ReSolve::LinSolverDirectCuSolverGLU(cuda_workspace_);
     }
   }
-#elif defined(HIOP_USE_HIP)
+#endif
+
+#ifdef HIOP_USE_HIP
   if(use_device_) {
     if(refactorization == "glu") {
       nlp_->log->printf(hovWarning, "GLU is unavailable with HIP; using rocSolverRf.\n");
@@ -319,7 +322,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   // component. Assemble the handlers, Gram-Schmidt implementation, FGMRES
   // solver, and LU preconditioner explicitly when refinement is requested.
   if(use_device_ && ir_maxit > 0) {
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
     if(refactorization_mode_ == RefactorizationMode::CUDA_RF) {
       ir_matrix_handler_ = new ReSolve::MatrixHandler(cuda_workspace_);
 
@@ -331,7 +334,9 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
                         "EVLOSER iterative refinement is supported only with RF; "
                         "disabling it for CUDA GLU.\n");
     }
-#elif defined(HIOP_USE_HIP)
+#endif
+
+#ifdef HIOP_USE_HIP
     if(refactorization_mode_ == RefactorizationMode::HIP_RF) {
       ir_matrix_handler_ = new ReSolve::MatrixHandler(hip_workspace_);
 
@@ -374,7 +379,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     }
   }
 #endif
-  nlp_->log->printf(hovSummary, "Ordering: %d\n", ordering_value);
+  nlp_->log->printf(hovSummary, "Ordering: %d\n", ordering_method);
 
   nlp_->log->printf(hovSummary, "Factorization: klu\n");
 
@@ -383,7 +388,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       nlp_->log->printf(hovSummary, "Refactorization: klu\n");
       break;
 
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
     case RefactorizationMode::CUDA_GLU:
       nlp_->log->printf(hovSummary, "Refactorization: glu\n");
       break;
@@ -391,7 +396,8 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     case RefactorizationMode::CUDA_RF:
       nlp_->log->printf(hovSummary, "Refactorization: rf\n");
       break;
-#elif defined(HIOP_USE_HIP)
+#endif
+#ifdef HIOP_USE_HIP
     case RefactorizationMode::HIP_RF:
       nlp_->log->printf(hovSummary, "Refactorization: rocSolverRf\n");
       break;
@@ -403,33 +409,34 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
 
 hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
 {
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
   delete ir_solver_;
   delete ir_preconditioner_;
   delete ir_gram_schmidt_;
   delete ir_vector_handler_;
   delete ir_matrix_handler_;
-#endif
-#if defined(HIOP_USE_CUDA)
+
+#ifdef HIOP_USE_CUDA
   delete cuda_glu_solver_;
   delete cuda_rf_solver_;
-#elif defined(HIOP_USE_HIP)
+#endif
+#ifdef HIOP_USE_HIP
   delete hip_rf_solver_;
 #endif
   delete factorization_solver_;
   delete rhs_;
   delete solution_;
   delete matrix_;
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
   delete cuda_workspace_;
-#elif defined(HIOP_USE_HIP)
+#endif
+#ifdef HIOP_USE_HIP
   delete hip_workspace_;
 #endif
   delete M_host_;
   delete[] index_convert_CSR2Triplet_host_;
   delete[] index_convert_extra_Diag2CSR_host_;
 
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
   if(index_convert_CSR2Triplet_device_ != nullptr) {
     cudaFree(index_convert_CSR2Triplet_device_);
   }
@@ -437,7 +444,8 @@ hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
   if(index_convert_extra_Diag2CSR_device_ != nullptr) {
     cudaFree(index_convert_extra_Diag2CSR_device_);
   }
-#elif defined(HIOP_USE_HIP)
+#endif
+#ifdef HIOP_USE_HIP
   if(index_convert_CSR2Triplet_device_ != nullptr) {
     const hipError_t status = hipFree(index_convert_CSR2Triplet_device_);
     (void)status;
@@ -502,7 +510,6 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
 
       refactorization_setup_complete_ = true;
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
       if(use_ir_) {
         assert(ir_solver_ != nullptr);
 
@@ -516,7 +523,6 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
           use_ir_ = false;
         }
       }
-#endif
 
       switch(refactorization_mode_) {
         // CPU KLU is excluded by the enclosing condition. Keep this case so
@@ -524,9 +530,10 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
         case RefactorizationMode::CPU_KLU:
           break;
 
-#if defined(HIOP_USE_CUDA)
         case RefactorizationMode::CUDA_GLU:
-          // GLU setup performs its initial numerical factorization.
+          // ReSolve's LinSolverDirectCuSolverGLU::setup() performs the initial
+          // cusolverSpDgluReset() and cusolverSpDgluFactor(), so no separate
+          // refactorize() call is needed before the first solve
           break;
 
         case RefactorizationMode::CUDA_RF:
@@ -534,13 +541,12 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
           // the first numerical refactorization.
           status = refactorize_selected_solver();
           break;
-#elif defined(HIOP_USE_HIP)
+
         case RefactorizationMode::HIP_RF:
           // RF setup imports and analyzes the KLU factors but does not perform
           // the first numerical refactorization.
           status = refactorize_selected_solver();
           break;
-#endif
       }
     }
 
@@ -568,7 +574,6 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
       return -1;
     }
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
     if(use_ir_) {
       assert(ir_solver_ != nullptr);
 
@@ -582,7 +587,6 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
         use_ir_ = false;
       }
     }
-#endif
 
     factorizationSetupSucc_ = 1;
   }
@@ -629,7 +633,6 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
     return false;
   }
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
   if(use_ir_) {
     assert(ir_solver_ != nullptr);
     assert(ir_preconditioner_ != nullptr);
@@ -649,7 +652,6 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
                       static_cast<int>(ir_solver_->getNumIter()),
                       ir_solver_->getFinalResidualNorm());
   }
-#endif
 
   if(solution_->copyToExternal(x_data, vector_memory, vector_memory) != 0) {
     nlp_->log->printf(hovError, "Failed to copy the ReSolve solution into HiOp.\n");
@@ -823,12 +825,11 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
       return -1;
     }
 
-    const int blocksize = 512;
-    int gridsize = (nnz_ + blocksize - 1) / blocksize;
+    const uint32_t blocksize = 512;
+    uint32_t gridsize = (static_cast<uint32_t>(nnz_) + blocksize - 1) / blocksize;
 
     mapArraysKernel<double, int>
-      <<<static_cast<unsigned int>(gridsize),
-        static_cast<unsigned int>(blocksize)>>>(
+      <<<gridsize, blocksize>>>(
           values,
           source_values,
           index_convert_CSR2Triplet_device_,
@@ -854,11 +855,10 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
     }
 #endif
 
-    gridsize = (n_ + blocksize - 1) / blocksize;
+    gridsize = (static_cast<uint32_t>(n_) + blocksize - 1) / blocksize;
 
     addToArrayKernel<double, int>
-        <<<static_cast<unsigned int>(gridsize),
-           static_cast<unsigned int>(blocksize)>>>(
+        <<<gridsize, blocksize>>>(
             values, source_values, index_convert_extra_Diag2CSR_device_, n_, M_->numberOfNonzeros());
 
 #if defined(HIOP_USE_CUDA)
@@ -1061,7 +1061,7 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
   assert(total_nnz_tmp == nnz_);
   (void)total_nnz_tmp;
 
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
   if(use_device_) {
     cudaError_t status = cudaMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), sizeof(int) * nnz_);
 
@@ -1118,7 +1118,9 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
       return -1;
     }
   }
-#elif defined(HIOP_USE_HIP)
+#endif
+
+#ifdef HIOP_USE_HIP
   if(use_device_) {
     hipError_t status = hipMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), sizeof(int) * static_cast<size_t>(nnz_));
 
