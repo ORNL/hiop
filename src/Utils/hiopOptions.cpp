@@ -922,13 +922,14 @@ void hiopOptionsNLP::register_options()
   //     - 'gpu' compute mode: work in progress
 
   {
-    vector<string> range{"auto", "ma57", "pardiso", "strumpack", "resolve", "ginkgo", "cusolver-chol"};
+    vector<string> range{"auto", "ma57", "pardiso", "strumpack", "resolve", "evloser", "ginkgo", "cusolver-chol"};
 
-    register_str_option("linear_solver_sparse",
-                        "auto",
-                        range,
-                        "Selects among MA57, PARDISO, STRUMPACK, cuSOLVER's Cholesky or LU, and GINKGO for the "
-                        "sparse linear solves.");
+    register_str_option(
+        "linear_solver_sparse",
+        "auto",
+        range,
+        "Selects among MA57, PARDISO, STRUMPACK, ReSolve, EVLOSER, cuSOLVER's Cholesky or LU, and GINKGO for the "
+        "sparse linear solves.");
   }
 
   // choose linear solver for duals intializations for sparse NLP problems
@@ -936,12 +937,13 @@ void hiopOptionsNLP::register_options()
   //  - when GPU mode is on, STRUMPACK is chosen by 'auto' if available
   //  - choosing option ma57 or pardiso with GPU being on, it results in no device being used in the linear solve!
   {
-    vector<string> range{"auto", "ma57", "pardiso", "resolve", "strumpack", "ginkgo"};
+    vector<string> range{"auto", "ma57", "pardiso", "resolve", "evloser", "strumpack", "ginkgo"};
 
-    register_str_option("duals_init_linear_solver_sparse",
-                        "auto",
-                        range,
-                        "Selects among MA57, PARDISO, cuSOLVER, STRUMPACK, and GINKGO for the sparse linear solves.");
+    register_str_option(
+        "duals_init_linear_solver_sparse",
+        "auto",
+        range,
+        "Selects among MA57, PARDISO, ReSolve, EVLOSER, cuSOLVER, STRUMPACK, and GINKGO for the sparse linear solves.");
   }
 
   // choose hardware backend for the Ginkgo solver to run on.
@@ -1402,7 +1404,7 @@ void hiopOptionsNLP::ensure_consistence()
   auto kkt_linsys = GetString("KKTLinsys");
   auto sol_sp = GetString("linear_solver_sparse");
   if(kkt_linsys == "full") {
-    if(sol_sp != "resolve" && sol_sp != "pardiso" && sol_sp != "strumpack" && sol_sp != "auto") {
+    if(sol_sp != "resolve" && sol_sp != "evloser" && sol_sp != "pardiso" && sol_sp != "strumpack" && sol_sp != "auto") {
       if(is_user_defined("linear_solver_sparse")) {
         log_printf(hovWarning,
                    "The option 'linear_solver_sparse=%s' is not valid with option 'KKTLinsys=full'. "
@@ -1424,6 +1426,29 @@ void hiopOptionsNLP::ensure_consistence()
       }
     }
   }
+
+#ifndef HIOP_USE_EVLOSER
+  if(sol_sp == "evloser") {
+    if(is_user_defined("linear_solver_sparse")) {
+      log_printf(hovWarning,
+                 "The option 'linear_solver_sparse=%s' is not valid because HiOp was built without EVLOSER support."
+                 " Will use 'linear_solver_sparse=auto'.\n",
+                 GetString("linear_solver_sparse").c_str());
+    }
+    set_val("linear_solver_sparse", "auto");
+  }
+
+  if(GetString("duals_init_linear_solver_sparse") == "evloser") {
+    if(is_user_defined("duals_init_linear_solver_sparse")) {
+      log_printf(
+          hovWarning,
+          "The option 'duals_init_linear_solver_sparse=%s' is not valid because HiOp was built without EVLOSER support."
+          " Will use 'duals_init_linear_solver_sparse=auto'.\n",
+          GetString("duals_init_linear_solver_sparse").c_str());
+    }
+    set_val("duals_init_linear_solver_sparse", "auto");
+  }
+#endif  // HIOP_USE_EVLOSER
 
 #ifndef HIOP_USE_CUDA
   if(sol_sp == "resolve" || sol_sp == "cusolver-chol") {
@@ -1559,7 +1584,8 @@ void hiopOptionsNLP::ensure_consistence()
       }
       set_val("fact_acceptor", "inertia_free");
     }
-  } else if(GetString("linear_solver_sparse") == "strumpack" || GetString("linear_solver_sparse") == "resolve") {
+  } else if(GetString("linear_solver_sparse") == "strumpack" || GetString("linear_solver_sparse") == "resolve" ||
+            GetString("linear_solver_sparse") == "evloser") {
     if(GetString("fact_acceptor") == "inertia_correction") {
       if(is_user_defined("fact_acceptor") && is_user_defined("linear_solver_sparse")) {
         log_printf(hovWarning,
