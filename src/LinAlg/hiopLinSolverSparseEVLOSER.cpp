@@ -1234,25 +1234,6 @@ int hiopLinSolverSymSparseEVLOSER::setup_refactorization_solver()
     case RefactorizationMode::CUDA_RF:
       assert(cuda_rf_solver_ != nullptr);
 
-      // KLU creates its factors in host memory. CUDA RF setup synchronizes
-      // them through the public CSR objects, which therefore need device
-      // storage before setup is called.
-      if(L->getRowData(ReSolve::memory::DEVICE) == nullptr || L->getColData(ReSolve::memory::DEVICE) == nullptr ||
-         L->getValues(ReSolve::memory::DEVICE) == nullptr) {
-        if(L->allocateMatrixData(ReSolve::memory::DEVICE) != 0) {
-          nlp_->log->printf(hovError, "Failed to allocate device storage for the EVLOSER KLU L factor.\n");
-          return -1;
-        }
-      }
-
-      if(U->getRowData(ReSolve::memory::DEVICE) == nullptr || U->getColData(ReSolve::memory::DEVICE) == nullptr ||
-         U->getValues(ReSolve::memory::DEVICE) == nullptr) {
-        if(U->allocateMatrixData(ReSolve::memory::DEVICE) != 0) {
-          nlp_->log->printf(hovError, "Failed to allocate device storage for the EVLOSER KLU U factor.\n");
-          return -1;
-        }
-      }
-
       return cuda_rf_solver_->setup(matrix_, L, U, P, Q, rhs_);
 #elif defined(HIOP_USE_HIP)
     case RefactorizationMode::HIP_RF:
