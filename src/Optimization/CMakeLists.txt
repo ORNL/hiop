@@ -23,6 +23,31 @@ set(hiopOptimization_SPARSE_SRC
   hiopKKTLinSysSparseNormalEqn.cpp
   )
 
+if(HIOP_USE_RESOLVE)
+  list(APPEND hiopOptimization_SPARSE_SRC
+    hiopKKTLinSysSparseHyKKT.cpp
+  )
+
+  if(HIOP_USE_CUDA)
+    set_source_files_properties(
+      hiopKKTLinSysSparseHyKKT.cpp
+      PROPERTIES LANGUAGE CUDA
+    )
+  endif()
+
+  if(HIOP_USE_HIP)
+    set_source_files_properties(
+      hiopKKTLinSysSparseHyKKT.cpp
+      PROPERTIES LANGUAGE CXX
+    )
+
+    set_source_files_properties(
+      hiopKKTLinSysSparseHyKKT.cpp
+      PROPERTIES COMPILE_FLAGS "-x hip"
+    )
+  endif()
+endif()
+
 set(hiopOptimization_INTERFACE_HEADERS
   hiopAlgFilterIPM.hpp
   hiopAlgPrimalDecomp.hpp
