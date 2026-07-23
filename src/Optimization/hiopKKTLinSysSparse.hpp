@@ -78,6 +78,11 @@ namespace matrix
 class Csr;
 }
 
+namespace vector
+{
+class Vector;
+}
+
 }  // namespace ReSolve
 
 namespace hiop
@@ -243,6 +248,17 @@ private:
   ReSolve::matrix::Csr* J_;
   ReSolve::matrix::Csr* J_d_;
 
+  // HiOp rd/dd correspond to HyKKT's slack blocks r_s/s.
+  ReSolve::vector::Vector* r_x_;
+  ReSolve::vector::Vector* r_s_;
+  ReSolve::vector::Vector* r_y_;
+  ReSolve::vector::Vector* r_yd_;
+
+  ReSolve::vector::Vector* x_;
+  ReSolve::vector::Vector* s_;
+  ReSolve::vector::Vector* y_;
+  ReSolve::vector::Vector* y_d_;
+
 #ifdef HIOP_USE_CUDA
   ReSolve::LinAlgWorkspaceCUDA* cuda_workspace_;
 #endif
@@ -269,6 +285,7 @@ private:
 #endif
 
   bool initialize_matrix_blocks();
+  bool initialize_vector_blocks();
   bool update_matrix_blocks();
 };
 

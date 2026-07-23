@@ -8,6 +8,7 @@
 #include <resolve/hykkt/HyKKTSolver.hpp>
 #include <resolve/matrix/Csr.hpp>
 #include <resolve/matrix/MatrixHandler.hpp>
+#include <resolve/vector/Vector.hpp>
 #include <resolve/vector/VectorHandler.hpp>
 
 #ifdef HIOP_USE_CUDA
@@ -181,6 +182,14 @@ hiopKKTLinSysCompressedSparseXDYcYdHyKKT::hiopKKTLinSysCompressedSparseXDYcYdHyK
       D_s_{nullptr},
       J_{nullptr},
       J_d_{nullptr},
+      r_x_{nullptr},
+      r_s_{nullptr},
+      r_y_{nullptr},
+      r_yd_{nullptr},
+      x_{nullptr},
+      s_{nullptr},
+      y_{nullptr},
+      y_d_{nullptr},
 #ifdef HIOP_USE_CUDA
       cuda_workspace_{nullptr},
 #endif
@@ -210,6 +219,16 @@ hiopKKTLinSysCompressedSparseXDYcYdHyKKT::~hiopKKTLinSysCompressedSparseXDYcYdHy
   delete D_s_;
   delete J_;
   delete J_d_;
+
+  delete r_x_;
+  delete r_s_;
+  delete r_y_;
+  delete r_yd_;
+
+  delete x_;
+  delete s_;
+  delete y_;
+  delete y_d_;
 
   delete[] H_csr_to_triplet_host_;
   delete[] H_diag_to_csr_host_;
@@ -367,6 +386,46 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
     }
   }
 #endif
+
+  return true;
+}
+
+bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_vector_blocks()
+{
+  assert(HessSp_);
+  assert(Jac_cSp_);
+  assert(Jac_dSp_);
+
+  const int nx = HessSp_->n();
+  const int neq = Jac_cSp_->m();
+  const int nineq = Jac_dSp_->m();
+
+  r_x_ = new ReSolve::vector::Vector(nx);
+  r_s_ = new ReSolve::vector::Vector(nineq);
+  r_y_ = new ReSolve::vector::Vector(neq);
+  r_yd_ = new ReSolve::vector::Vector(nineq);
+
+  x_ = new ReSolve::vector::Vector(nx);
+  s_ = new ReSolve::vector::Vector(nineq);
+  y_ = new ReSolve::vector::Vector(neq);
+  y_d_ = new ReSolve::vector::Vector(nineq);
+
+  const auto memspace =
+      nlp_->options->GetString("mem_space") == "device"
+          ? ReSolve::memory::DEVICE
+          : ReSolve::memory::HOST;
+
+  if(r_x_->allocate(memspace) != 0 ||
+     r_s_->allocate(memspace) != 0 ||
+     r_y_->allocate(memspace) != 0 ||
+     r_yd_->allocate(memspace) != 0 ||
+     x_->allocateAll(memspace) != 0 ||
+     s_->allocateAll(memspace) != 0 ||
+     y_->allocateAll(memspace) != 0 ||
+     y_d_->allocateAll(memspace) != 0) {
+    nlp_->log->printf(hovError, "Failed to allocate ReSolve HyKKT vector blocks.\n");
+    return false;
+  }
 
   return true;
 }
@@ -570,6 +629,12 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::build_kkt_matrix(const hiopPDPert
 
   if(nullptr == H_) {
     if(!initialize_matrix_blocks()) {
+      return false;
+    }
+  }
+
+  if(nullptr == r_x_) {
+    if(!initialize_vector_blocks()) {
       return false;
     }
   }
