@@ -253,6 +253,23 @@ private:
 
   ReSolve::MatrixHandler* matrix_handler_;
   ReSolve::VectorHandler* vector_handler_;
+
+  // Maps persistent ReSolve CSR entries to HiOp triplet entries for
+  // numerical updates; H_diag_to_csr_host_ locates the added Hx diagonal.
+  int* H_csr_to_triplet_host_;
+  int* H_diag_to_csr_host_;
+  int* J_csr_to_triplet_host_;
+  int* J_d_csr_to_triplet_host_;
+
+#ifdef HIOP_USE_GPU
+  int* H_csr_to_triplet_device_;
+  int* H_diag_to_csr_device_;
+  int* J_csr_to_triplet_device_;
+  int* J_d_csr_to_triplet_device_;
+#endif
+
+  bool initialize_matrix_blocks();
+  bool update_matrix_blocks();
 };
 
 /*
