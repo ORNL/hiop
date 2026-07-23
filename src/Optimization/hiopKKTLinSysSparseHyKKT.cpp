@@ -4,7 +4,9 @@
 #include <cmath>
 #include <numeric>
 #include <string>
-#include <vector>
+
+#include <umpire/Allocator.hpp>
+#include <umpire/ResourceManager.hpp>
 
 #include <resolve/hykkt/HyKKTSolver.hpp>
 #include <resolve/matrix/Csr.hpp>
@@ -275,64 +277,88 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
   const int neq = Jac_cSp_->m();
   const int nineq = Jac_dSp_->m();
 
-  std::vector<int> H_rows(static_cast<size_t>(HessSp_->numberOfNonzeros()));
-  std::vector<int> H_cols(static_cast<size_t>(HessSp_->numberOfNonzeros()));
-  std::vector<double> H_vals(static_cast<size_t>(HessSp_->numberOfNonzeros()));
+  auto& resmgr = umpire::ResourceManager::getInstance();
+  umpire::Allocator host_alloc = resmgr.getAllocator("HOST");
 
-  HessSp_->copy_to(H_rows.data(), H_cols.data(), H_vals.data());
+  const size_t H_nnz = static_cast<size_t>(HessSp_->numberOfNonzeros());
+  int* H_rows = static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int)));
+  int* H_cols = static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int)));
+  double* H_vals = static_cast<double*>(host_alloc.allocate(H_nnz * sizeof(double)));
 
-  if(!build_csr_structure(nx,
-                          nx,
-                          H_rows.data(),
-                          H_cols.data(),
-                          HessSp_->numberOfNonzeros(),
-                          true,
-                          true,
-                          H_,
-                          H_csr_to_triplet_host_,
-                          H_diag_to_csr_host_)) {
+  HessSp_->copy_to(H_rows, H_cols, H_vals);
+
+  const bool H_ok = build_csr_structure(nx,
+                                        nx,
+                                        H_rows,
+                                        H_cols,
+                                        HessSp_->numberOfNonzeros(),
+                                        true,
+                                        true,
+                                        H_,
+                                        H_csr_to_triplet_host_,
+                                        H_diag_to_csr_host_);
+
+  host_alloc.deallocate(H_rows);
+  host_alloc.deallocate(H_cols);
+  host_alloc.deallocate(H_vals);
+
+  if(!H_ok) {
     nlp_->log->printf(hovError, "Failed to construct the ReSolve HyKKT Hessian block.\n");
     return false;
   }
 
-  std::vector<int> J_rows(static_cast<size_t>(Jac_cSp_->numberOfNonzeros()));
-  std::vector<int> J_cols(static_cast<size_t>(Jac_cSp_->numberOfNonzeros()));
-  std::vector<double> J_vals(static_cast<size_t>(Jac_cSp_->numberOfNonzeros()));
+  const size_t J_nnz = static_cast<size_t>(Jac_cSp_->numberOfNonzeros());
+  int* J_rows = static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int)));
+  int* J_cols = static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int)));
+  double* J_vals = static_cast<double*>(host_alloc.allocate(J_nnz * sizeof(double)));
 
-  const_cast<hiopMatrixSparse*>(Jac_cSp_)->copy_to(J_rows.data(), J_cols.data(), J_vals.data());
+  const_cast<hiopMatrixSparse*>(Jac_cSp_)->copy_to(J_rows, J_cols, J_vals);
 
   int* unused_diag{nullptr};
 
-  if(!build_csr_structure(neq,
-                          nx,
-                          J_rows.data(),
-                          J_cols.data(),
-                          Jac_cSp_->numberOfNonzeros(),
-                          false,
-                          false,
-                          J_,
-                          J_csr_to_triplet_host_,
-                          unused_diag)) {
+  const bool J_ok = build_csr_structure(neq,
+                                        nx,
+                                        J_rows,
+                                        J_cols,
+                                        Jac_cSp_->numberOfNonzeros(),
+                                        false,
+                                        false,
+                                        J_,
+                                        J_csr_to_triplet_host_,
+                                        unused_diag);
+
+  host_alloc.deallocate(J_rows);
+  host_alloc.deallocate(J_cols);
+  host_alloc.deallocate(J_vals);
+
+  if(!J_ok) {
     nlp_->log->printf(hovError, "Failed to construct the ReSolve HyKKT equality Jacobian block.\n");
     return false;
   }
 
-  std::vector<int> J_d_rows(static_cast<size_t>(Jac_dSp_->numberOfNonzeros()));
-  std::vector<int> J_d_cols(static_cast<size_t>(Jac_dSp_->numberOfNonzeros()));
-  std::vector<double> J_d_vals(static_cast<size_t>(Jac_dSp_->numberOfNonzeros()));
+  const size_t J_d_nnz = static_cast<size_t>(Jac_dSp_->numberOfNonzeros());
+  int* J_d_rows = static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int)));
+  int* J_d_cols = static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int)));
+  double* J_d_vals = static_cast<double*>(host_alloc.allocate(J_d_nnz * sizeof(double)));
 
-  const_cast<hiopMatrixSparse*>(Jac_dSp_)->copy_to(J_d_rows.data(), J_d_cols.data(), J_d_vals.data());
+  const_cast<hiopMatrixSparse*>(Jac_dSp_)->copy_to(J_d_rows, J_d_cols, J_d_vals);
 
-  if(!build_csr_structure(nineq,
-                          nx,
-                          J_d_rows.data(),
-                          J_d_cols.data(),
-                          Jac_dSp_->numberOfNonzeros(),
-                          false,
-                          false,
-                          J_d_,
-                          J_d_csr_to_triplet_host_,
-                          unused_diag)) {
+  const bool J_d_ok = build_csr_structure(nineq,
+                                          nx,
+                                          J_d_rows,
+                                          J_d_cols,
+                                          Jac_dSp_->numberOfNonzeros(),
+                                          false,
+                                          false,
+                                          J_d_,
+                                          J_d_csr_to_triplet_host_,
+                                          unused_diag);
+
+  host_alloc.deallocate(J_d_rows);
+  host_alloc.deallocate(J_d_cols);
+  host_alloc.deallocate(J_d_vals);
+
+  if(!J_d_ok) {
     nlp_->log->printf(hovError, "Failed to construct the ReSolve HyKKT inequality Jacobian block.\n");
     return false;
   }
@@ -711,7 +737,7 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::build_kkt_matrix(const hiopPDPert
   return false;
 }
 
-if(nullptr == hykkt_solver_) {
+  if(nullptr == hykkt_solver_) {
   if(!initialize_solver()) {
     return false;
   }
@@ -758,7 +784,6 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
     nlp_->log->printf(hovError, "Failed to copy HiOp RHS to ReSolve HyKKT.\n");
     return false;
   }
-
   nlp_->runStats.kkt.tmSolveInner.start();
   const ReSolve::real_type error = hykkt_solver_->solve();
   nlp_->runStats.kkt.tmSolveInner.stop();
