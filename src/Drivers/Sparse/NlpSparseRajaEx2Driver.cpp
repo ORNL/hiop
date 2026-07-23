@@ -22,6 +22,7 @@ static bool parse_arguments(int argc,
                             bool& use_resolve_cuda_glu,
                             bool& use_resolve_cuda_rf,
                             bool& use_resolve_hip,
+                            bool& use_hykkt,
                             bool& use_ginkgo,
                             bool& use_ginkgo_cuda,
                             bool& use_ginkgo_hip)
@@ -32,6 +33,7 @@ static bool parse_arguments(int argc,
   use_resolve_cuda_glu = false;
   use_resolve_cuda_rf = false;
   use_resolve_hip = false;
+  use_hykkt = false;
   use_ginkgo = false;
   use_ginkgo_cuda = false;
   use_ginkgo_hip = false;
@@ -52,6 +54,8 @@ static bool parse_arguments(int argc,
         use_resolve_cuda_rf = true;
       } else if(std::string(argv[4]) == "-resolve_hip") {
         use_resolve_hip = true;
+      } else if(std::string(argv[4]) == "-hykkt") {
+        use_hykkt = true;
       } else if(std::string(argv[4]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[4]) == "-ginkgo_cuda") {
@@ -79,6 +83,8 @@ static bool parse_arguments(int argc,
         use_resolve_cuda_rf = true;
       } else if(std::string(argv[3]) == "-resolve_hip") {
         use_resolve_hip = true;
+      } else if(std::string(argv[3]) == "-hykkt") {
+        use_hykkt = true;
       } else if(std::string(argv[3]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[3]) == "-ginkgo_cuda") {
@@ -106,6 +112,8 @@ static bool parse_arguments(int argc,
         use_resolve_cuda_rf = true;
       } else if(std::string(argv[2]) == "-resolve_hip") {
         use_resolve_hip = true;
+      } else if(std::string(argv[2]) == "-hykkt") {
+        use_hykkt = true;
       } else if(std::string(argv[2]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[2]) == "-ginkgo_cuda") {
@@ -133,6 +141,8 @@ static bool parse_arguments(int argc,
         use_resolve_cuda_rf = true;
       } else if(std::string(argv[1]) == "-resolve_hip") {
         use_resolve_hip = true;
+      } else if(std::string(argv[1]) == "-hykkt") {
+        use_hykkt = true;
       } else if(std::string(argv[1]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[1]) == "-ginkgo_cuda") {
@@ -153,12 +163,13 @@ static bool parse_arguments(int argc,
   }
 
 #ifndef HIOP_USE_RESOLVE
-  if(use_resolve_cuda_glu || use_resolve_cuda_rf || use_resolve_hip) {
+  if(use_resolve_cuda_glu || use_resolve_cuda_rf || use_resolve_hip || use_hykkt) {
     printf("HiOp built without ReSolve support. ");
     printf("Using default linear solver ...\n");
     use_resolve_cuda_glu = false;
     use_resolve_cuda_rf = false;
     use_resolve_hip = false;
+    use_hykkt = false;
   }
 #endif
 
@@ -186,10 +197,10 @@ static bool parse_arguments(int argc,
 #endif
 
   // Sparse LU solvers require the inertia-free approach.
-  if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_resolve_hip) &&
+  if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_resolve_hip || use_hykkt) &&
      !(inertia_free)) {
     inertia_free = true;
-    printf("Selected LU sparse solver requires inertia free approach. ");
+    printf("Selected sparse solver requires the inertia-free approach. ");
     printf("Enabling now ...\n");
   }
 
@@ -250,6 +261,7 @@ static void usage(const char* exeName)
   printf(
       "  '-resolve_hip' : use ReSolve linear solver with KLU factorization and rocSOLVER RF refactorization "
       "[optional]\n");
+  printf("  '-hykkt': use ReSolve HyKKT linear solver [optional]\n");
   printf("  '-ginkgo': use GINKGO linear solver [optional]\n");
 }
 
@@ -283,6 +295,7 @@ int main(int argc, char** argv)
   bool use_resolve_cuda_glu = false;
   bool use_resolve_cuda_rf = false;
   bool use_resolve_hip = false;
+  bool use_hykkt = false;
   bool use_ginkgo = false;
   bool use_ginkgo_cuda = false;
   bool use_ginkgo_hip = false;
@@ -294,6 +307,7 @@ int main(int argc, char** argv)
                       use_resolve_cuda_glu,
                       use_resolve_cuda_rf,
                       use_resolve_hip,
+                      use_hykkt,
                       use_ginkgo,
                       use_ginkgo_cuda,
                       use_ginkgo_hip)) {
@@ -321,7 +335,10 @@ int main(int argc, char** argv)
     // ReSolve uses the same refactorization option string; the solver name selects the backend.
     const bool use_resolve = use_resolve_cuda_glu || use_resolve_cuda_rf || use_resolve_hip;
 
-    if(use_resolve) {
+    if(use_hykkt) {
+      nlp.options->SetStringValue("linear_solver_sparse", "hykkt");
+      nlp.options->SetIntegerValue("ir_outer_maxit", 0);
+    } else if(use_resolve) {
       nlp.options->SetStringValue("linear_solver_sparse", "resolve");
     }
 
