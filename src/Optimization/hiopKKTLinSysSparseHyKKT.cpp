@@ -1,6 +1,7 @@
 #include "hiopKKTLinSysSparse.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 #include <string>
 #include <vector>
@@ -10,6 +11,7 @@
 #include <resolve/matrix/MatrixHandler.hpp>
 #include <resolve/vector/Vector.hpp>
 #include <resolve/vector/VectorHandler.hpp>
+#include <resolve/workspace/LinAlgWorkspaceCpu.hpp>
 
 #ifdef HIOP_USE_CUDA
 #include <resolve/workspace/LinAlgWorkspaceCUDA.hpp>
@@ -190,6 +192,7 @@ hiopKKTLinSysCompressedSparseXDYcYdHyKKT::hiopKKTLinSysCompressedSparseXDYcYdHyK
       s_{nullptr},
       y_{nullptr},
       y_d_{nullptr},
+      cpu_workspace_{nullptr},
 #ifdef HIOP_USE_CUDA
       cuda_workspace_{nullptr},
 #endif
@@ -252,6 +255,7 @@ hiopKKTLinSysCompressedSparseXDYcYdHyKKT::~hiopKKTLinSysCompressedSparseXDYcYdHy
   delete vector_handler_;
   delete matrix_handler_;
 
+  delete cpu_workspace_;
 #ifdef HIOP_USE_CUDA
   delete cuda_workspace_;
 #endif
@@ -426,6 +430,70 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_vector_blocks()
     nlp_->log->printf(hovError, "Failed to allocate ReSolve HyKKT vector blocks.\n");
     return false;
   }
+
+  return true;
+}
+
+bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_solver()
+{
+  assert(H_);
+  assert(D_s_);
+  assert(J_);
+  assert(J_d_);
+
+  assert(r_x_);
+  assert(r_s_);
+  assert(r_y_);
+  assert(r_yd_);
+
+  assert(x_);
+  assert(s_);
+  assert(y_);
+  assert(y_d_);
+
+  const std::string mem_space = nlp_->options->GetString("mem_space");
+  const auto memspace =
+      mem_space == "device"
+          ? ReSolve::memory::DEVICE
+          : ReSolve::memory::HOST;
+
+  if(memspace == ReSolve::memory::DEVICE) {
+#ifdef HIOP_USE_CUDA
+    cuda_workspace_ = new ReSolve::LinAlgWorkspaceCUDA();
+    cuda_workspace_->initializeHandles();
+
+    matrix_handler_ = new ReSolve::MatrixHandler(cuda_workspace_);
+    vector_handler_ = new ReSolve::VectorHandler(cuda_workspace_);
+#elif defined(HIOP_USE_HIP)
+    hip_workspace_ = new ReSolve::LinAlgWorkspaceHIP();
+    hip_workspace_->initializeHandles();
+
+    matrix_handler_ = new ReSolve::MatrixHandler(hip_workspace_);
+    vector_handler_ = new ReSolve::VectorHandler(hip_workspace_);
+#else
+    nlp_->log->printf(hovError, "ReSolve HyKKT device backend is not available.\n");
+    return false;
+#endif
+  } else {
+    cpu_workspace_ = new ReSolve::LinAlgWorkspaceCpu();
+    cpu_workspace_->initializeHandles();
+
+    matrix_handler_ = new ReSolve::MatrixHandler(cpu_workspace_);
+    vector_handler_ = new ReSolve::VectorHandler(cpu_workspace_);
+  }
+
+  hykkt_solver_ =
+      new ReSolve::hykkt::HyKKTSolver(H_->getNumRows(),
+                                      J_d_->getNumRows(),
+                                      J_->getNumRows(),
+                                      memspace);
+
+  hykkt_solver_->setMatrixBlocks(H_, D_s_, J_, J_d_);
+  hykkt_solver_->setRHSBlocks(r_x_, r_s_, r_y_, r_yd_);
+  hykkt_solver_->setLHSPointers(x_, s_, y_, y_d_);
+  // Use the gamma value exercised by ReSolve's HyKKT solver tests.
+  hykkt_solver_->setGamma(10000.0);
+  hykkt_solver_->addHandlers(matrix_handler_, vector_handler_);
 
   return true;
 }
@@ -639,7 +707,17 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::build_kkt_matrix(const hiopPDPert
     }
   }
 
-  return update_matrix_blocks();
+  if(!update_matrix_blocks()) {
+  return false;
+}
+
+if(nullptr == hykkt_solver_) {
+  if(!initialize_solver()) {
+    return false;
+  }
+}
+
+return true;
 }
 
 bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
@@ -651,12 +729,70 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
                                                                hiopVector& dyc,
                                                                hiopVector& dyd)
 {
-  return hiopKKTLinSysCompressedSparseXDYcYd::solveCompressed(rx, rd, ryc, ryd, dx, dd, dyc, dyd);
+  assert(hykkt_solver_);
+  assert(r_x_);
+  assert(r_s_);
+  assert(r_y_);
+  assert(r_yd_);
+  assert(x_);
+  assert(s_);
+  assert(y_);
+  assert(y_d_);
+
+  const auto memspace =
+      nlp_->options->GetString("mem_space") == "device"
+          ? ReSolve::memory::DEVICE
+          : ReSolve::memory::HOST;
+
+  nlp_->runStats.kkt.tmSolveRhsManip.start();
+
+  const bool rhs_ok =
+      r_x_->copyFromExternal(rx.local_data_const(), memspace, memspace) == 0 &&
+      r_s_->copyFromExternal(rd.local_data_const(), memspace, memspace) == 0 &&
+      r_y_->copyFromExternal(ryc.local_data_const(), memspace, memspace) == 0 &&
+      r_yd_->copyFromExternal(ryd.local_data_const(), memspace, memspace) == 0;
+
+  nlp_->runStats.kkt.tmSolveRhsManip.stop();
+
+  if(!rhs_ok) {
+    nlp_->log->printf(hovError, "Failed to copy HiOp RHS to ReSolve HyKKT.\n");
+    return false;
+  }
+
+  nlp_->runStats.kkt.tmSolveInner.start();
+  const ReSolve::real_type error = hykkt_solver_->solve();
+  nlp_->runStats.kkt.tmSolveInner.stop();
+
+  // HyKKT returns the relative residual; its solver tests use 1e-2 as the success threshold.
+  if(!std::isfinite(error) || error >= 1e-2) {
+    nlp_->log->printf(hovError,
+                      "ReSolve HyKKT solve failed with relative residual %e.\n",
+                      error);
+    return false;
+  }
+
+  nlp_->runStats.kkt.tmSolveRhsManip.start();
+
+  const bool solution_ok =
+      x_->copyToExternal(dx.local_data(), memspace, memspace) == 0 &&
+      s_->copyToExternal(dd.local_data(), memspace, memspace) == 0 &&
+      y_->copyToExternal(dyc.local_data(), memspace, memspace) == 0 &&
+      y_d_->copyToExternal(dyd.local_data(), memspace, memspace) == 0;
+
+  nlp_->runStats.kkt.tmSolveRhsManip.stop();
+
+  if(!solution_ok) {
+    nlp_->log->printf(hovError, "Failed to copy ReSolve HyKKT solution to HiOp.\n");
+    return false;
+  }
+
+  return true;
 }
 
 int hiopKKTLinSysCompressedSparseXDYcYdHyKKT::factorizeWithCurvCheck()
 {
-  return hiopKKTLinSysCurvCheck::factorizeWithCurvCheck();
+  // HyKKT performs factorization as part of solve().
+  return 0;
 }
 
 }  // namespace hiop

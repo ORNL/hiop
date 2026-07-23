@@ -60,6 +60,8 @@ namespace ReSolve
 class MatrixHandler;
 class VectorHandler;
 
+class LinAlgWorkspaceCpu;
+
 #ifdef HIOP_USE_CUDA
 class LinAlgWorkspaceCUDA;
 #endif
@@ -259,6 +261,7 @@ private:
   ReSolve::vector::Vector* y_;
   ReSolve::vector::Vector* y_d_;
 
+  ReSolve::LinAlgWorkspaceCpu* cpu_workspace_;
 #ifdef HIOP_USE_CUDA
   ReSolve::LinAlgWorkspaceCUDA* cuda_workspace_;
 #endif
@@ -286,6 +289,7 @@ private:
 
   bool initialize_matrix_blocks();
   bool initialize_vector_blocks();
+  bool initialize_solver();
   bool update_matrix_blocks();
 };
 
