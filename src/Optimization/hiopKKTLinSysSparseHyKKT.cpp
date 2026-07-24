@@ -4,9 +4,12 @@
 #include <cmath>
 #include <numeric>
 #include <string>
+#include <vector>
 
+#ifdef HIOP_USE_RAJA
 #include <umpire/Allocator.hpp>
 #include <umpire/ResourceManager.hpp>
+#endif
 
 #include <resolve/hykkt/HyKKTSolver.hpp>
 #include <resolve/matrix/Csr.hpp>
@@ -50,6 +53,15 @@ __global__ void add_diagonal_to_csr(T* dst, const T* diagonal, const I* map, I n
 
 bool copy_mapping_to_device(int*& dst, const int* src, size_t count)
 {
+  if(count == 0) {
+    dst = nullptr;
+    return true;
+  }
+
+  if(src == nullptr) {
+    return false;
+  }
+
 #ifdef HIOP_USE_CUDA
   if(cudaMalloc(reinterpret_cast<void**>(&dst), count * sizeof(int)) != cudaSuccess) {
     return false;
@@ -277,15 +289,37 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
   const int neq = Jac_cSp_->m();
   const int nineq = Jac_dSp_->m();
 
+#ifdef HIOP_USE_RAJA
   auto& resmgr = umpire::ResourceManager::getInstance();
   umpire::Allocator host_alloc = resmgr.getAllocator("HOST");
+#endif
 
   const size_t H_nnz = static_cast<size_t>(HessSp_->numberOfNonzeros());
-  int* H_rows = static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int)));
-  int* H_cols = static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int)));
-  double* H_vals = static_cast<double*>(host_alloc.allocate(H_nnz * sizeof(double)));
 
-  HessSp_->copy_to(H_rows, H_cols, H_vals);
+#ifdef HIOP_USE_RAJA
+  int* H_rows = H_nnz > 0
+                    ? static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int)))
+                    : nullptr;
+  int* H_cols = H_nnz > 0
+                    ? static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int)))
+                    : nullptr;
+  double* H_vals =
+      H_nnz > 0
+          ? static_cast<double*>(host_alloc.allocate(H_nnz * sizeof(double)))
+          : nullptr;
+#else
+  std::vector<int> H_rows_storage(H_nnz);
+  std::vector<int> H_cols_storage(H_nnz);
+  std::vector<double> H_vals_storage(H_nnz);
+
+  int* H_rows = H_nnz > 0 ? H_rows_storage.data() : nullptr;
+  int* H_cols = H_nnz > 0 ? H_cols_storage.data() : nullptr;
+  double* H_vals = H_nnz > 0 ? H_vals_storage.data() : nullptr;
+#endif
+
+  if(H_nnz > 0) {
+    HessSp_->copy_to(H_rows, H_cols, H_vals);
+  }
 
   const bool H_ok = build_csr_structure(nx,
                                         nx,
@@ -298,9 +332,17 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
                                         H_csr_to_triplet_host_,
                                         H_diag_to_csr_host_);
 
-  host_alloc.deallocate(H_rows);
-  host_alloc.deallocate(H_cols);
-  host_alloc.deallocate(H_vals);
+#ifdef HIOP_USE_RAJA
+  if(H_rows != nullptr) {
+    host_alloc.deallocate(H_rows);
+  }
+  if(H_cols != nullptr) {
+    host_alloc.deallocate(H_cols);
+  }
+  if(H_vals != nullptr) {
+    host_alloc.deallocate(H_vals);
+  }
+#endif
 
   if(!H_ok) {
     nlp_->log->printf(hovError, "Failed to construct the ReSolve HyKKT Hessian block.\n");
@@ -308,11 +350,31 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
   }
 
   const size_t J_nnz = static_cast<size_t>(Jac_cSp_->numberOfNonzeros());
-  int* J_rows = static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int)));
-  int* J_cols = static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int)));
-  double* J_vals = static_cast<double*>(host_alloc.allocate(J_nnz * sizeof(double)));
 
-  const_cast<hiopMatrixSparse*>(Jac_cSp_)->copy_to(J_rows, J_cols, J_vals);
+#ifdef HIOP_USE_RAJA
+  int* J_rows = J_nnz > 0
+                    ? static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int)))
+                    : nullptr;
+  int* J_cols = J_nnz > 0
+                    ? static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int)))
+                    : nullptr;
+  double* J_vals =
+      J_nnz > 0
+          ? static_cast<double*>(host_alloc.allocate(J_nnz * sizeof(double)))
+          : nullptr;
+#else
+  std::vector<int> J_rows_storage(J_nnz);
+  std::vector<int> J_cols_storage(J_nnz);
+  std::vector<double> J_vals_storage(J_nnz);
+
+  int* J_rows = J_nnz > 0 ? J_rows_storage.data() : nullptr;
+  int* J_cols = J_nnz > 0 ? J_cols_storage.data() : nullptr;
+  double* J_vals = J_nnz > 0 ? J_vals_storage.data() : nullptr;
+#endif
+
+  if(J_nnz > 0) {
+    const_cast<hiopMatrixSparse*>(Jac_cSp_)->copy_to(J_rows, J_cols, J_vals);
+  }
 
   int* unused_diag{nullptr};
 
@@ -327,9 +389,17 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
                                         J_csr_to_triplet_host_,
                                         unused_diag);
 
-  host_alloc.deallocate(J_rows);
-  host_alloc.deallocate(J_cols);
-  host_alloc.deallocate(J_vals);
+#ifdef HIOP_USE_RAJA
+  if(J_rows != nullptr) {
+    host_alloc.deallocate(J_rows);
+  }
+  if(J_cols != nullptr) {
+    host_alloc.deallocate(J_cols);
+  }
+  if(J_vals != nullptr) {
+    host_alloc.deallocate(J_vals);
+  }
+#endif
 
   if(!J_ok) {
     nlp_->log->printf(hovError, "Failed to construct the ReSolve HyKKT equality Jacobian block.\n");
@@ -337,11 +407,35 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
   }
 
   const size_t J_d_nnz = static_cast<size_t>(Jac_dSp_->numberOfNonzeros());
-  int* J_d_rows = static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int)));
-  int* J_d_cols = static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int)));
-  double* J_d_vals = static_cast<double*>(host_alloc.allocate(J_d_nnz * sizeof(double)));
 
-  const_cast<hiopMatrixSparse*>(Jac_dSp_)->copy_to(J_d_rows, J_d_cols, J_d_vals);
+#ifdef HIOP_USE_RAJA
+  int* J_d_rows =
+      J_d_nnz > 0
+          ? static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int)))
+          : nullptr;
+  int* J_d_cols =
+      J_d_nnz > 0
+          ? static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int)))
+          : nullptr;
+  double* J_d_vals =
+      J_d_nnz > 0
+          ? static_cast<double*>(host_alloc.allocate(J_d_nnz * sizeof(double)))
+          : nullptr;
+#else
+  std::vector<int> J_d_rows_storage(J_d_nnz);
+  std::vector<int> J_d_cols_storage(J_d_nnz);
+  std::vector<double> J_d_vals_storage(J_d_nnz);
+
+  int* J_d_rows = J_d_nnz > 0 ? J_d_rows_storage.data() : nullptr;
+  int* J_d_cols = J_d_nnz > 0 ? J_d_cols_storage.data() : nullptr;
+  double* J_d_vals = J_d_nnz > 0 ? J_d_vals_storage.data() : nullptr;
+#endif
+
+  if(J_d_nnz > 0) {
+    const_cast<hiopMatrixSparse*>(Jac_dSp_)->copy_to(J_d_rows,
+                                                     J_d_cols,
+                                                     J_d_vals);
+  }
 
   const bool J_d_ok = build_csr_structure(nineq,
                                           nx,
@@ -354,9 +448,17 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
                                           J_d_csr_to_triplet_host_,
                                           unused_diag);
 
-  host_alloc.deallocate(J_d_rows);
-  host_alloc.deallocate(J_d_cols);
-  host_alloc.deallocate(J_d_vals);
+#ifdef HIOP_USE_RAJA
+  if(J_d_rows != nullptr) {
+    host_alloc.deallocate(J_d_rows);
+  }
+  if(J_d_cols != nullptr) {
+    host_alloc.deallocate(J_d_cols);
+  }
+  if(J_d_vals != nullptr) {
+    host_alloc.deallocate(J_d_vals);
+  }
+#endif
 
   if(!J_d_ok) {
     nlp_->log->printf(hovError, "Failed to construct the ReSolve HyKKT inequality Jacobian block.\n");
@@ -538,6 +640,12 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
 
   const std::string mem_space = nlp_->options->GetString("mem_space");
 
+  const ReSolve::index_type H_nnz = H_->getNnz();
+  const ReSolve::index_type D_s_nnz = D_s_->getNnz();
+  const ReSolve::index_type J_nnz = J_->getNnz();
+  const ReSolve::index_type J_d_nnz = J_d_->getNnz();
+  const index_type Hx_size = Hx_->get_size();
+
 #ifdef HIOP_USE_GPU
   if(mem_space == "device") {
     double* H_values = H_->getValues(ReSolve::memory::DEVICE);
@@ -551,64 +659,85 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
     const double* Hx_values = Hx_->local_data();
     const double* Hd_values = Hd_->local_data();
 
-    if(!H_values || !D_s_values || !J_values || !J_d_values ||
-       !Hess_values || !Jac_c_values || !Jac_d_values || !Hx_values || !Hd_values) {
+    if((H_nnz > 0 && (!H_values || !Hess_values || !H_csr_to_triplet_device_)) ||
+       (Hx_size > 0 && (!H_values || !Hx_values || !H_diag_to_csr_device_)) ||
+       (D_s_nnz > 0 && (!D_s_values || !Hd_values)) ||
+       (J_nnz > 0 && (!J_values || !Jac_c_values || !J_csr_to_triplet_device_)) ||
+       (J_d_nnz > 0 && (!J_d_values || !Jac_d_values || !J_d_csr_to_triplet_device_))) {
       nlp_->log->printf(hovError, "Failed to access HyKKT device matrix block values.\n");
       return false;
     }
 
     constexpr unsigned int blocksize = 512;
 
-    unsigned int gridsize =
-        (static_cast<unsigned int>(H_->getNnz()) + blocksize - 1) / blocksize;
+    if(H_nnz > 0) {
+      const unsigned int gridsize =
+          (static_cast<unsigned int>(H_nnz) + blocksize - 1) / blocksize;
 
-    map_triplet_to_csr<double, int>
-        <<<gridsize, blocksize>>>(H_values,
-                                 Hess_values,
-                                 H_csr_to_triplet_device_,
-                                 static_cast<int>(H_->getNnz()));
+      map_triplet_to_csr<double, int>
+          <<<gridsize, blocksize>>>(H_values,
+                                   Hess_values,
+                                   H_csr_to_triplet_device_,
+                                   static_cast<int>(H_nnz));
+    }
 
-    gridsize =
-        (static_cast<unsigned int>(Hx_->get_size()) + blocksize - 1) / blocksize;
+    if(Hx_size > 0) {
+      const unsigned int gridsize =
+          (static_cast<unsigned int>(Hx_size) + blocksize - 1) / blocksize;
 
-    add_diagonal_to_csr<double, int>
-        <<<gridsize, blocksize>>>(H_values,
-                                 Hx_values,
-                                 H_diag_to_csr_device_,
-                                 static_cast<int>(Hx_->get_size()));
+      add_diagonal_to_csr<double, int>
+          <<<gridsize, blocksize>>>(H_values,
+                                   Hx_values,
+                                   H_diag_to_csr_device_,
+                                   static_cast<int>(Hx_size));
+    }
 
-    gridsize =
-        (static_cast<unsigned int>(J_->getNnz()) + blocksize - 1) / blocksize;
+    if(J_nnz > 0) {
+      const unsigned int gridsize =
+          (static_cast<unsigned int>(J_nnz) + blocksize - 1) / blocksize;
 
-    map_triplet_to_csr<double, int>
-        <<<gridsize, blocksize>>>(J_values,
-                                 Jac_c_values,
-                                 J_csr_to_triplet_device_,
-                                 static_cast<int>(J_->getNnz()));
+      map_triplet_to_csr<double, int>
+          <<<gridsize, blocksize>>>(J_values,
+                                   Jac_c_values,
+                                   J_csr_to_triplet_device_,
+                                   static_cast<int>(J_nnz));
+    }
 
-    gridsize =
-        (static_cast<unsigned int>(J_d_->getNnz()) + blocksize - 1) / blocksize;
+    if(J_d_nnz > 0) {
+      const unsigned int gridsize =
+          (static_cast<unsigned int>(J_d_nnz) + blocksize - 1) / blocksize;
 
-    map_triplet_to_csr<double, int>
-        <<<gridsize, blocksize>>>(J_d_values,
-                                 Jac_d_values,
-                                 J_d_csr_to_triplet_device_,
-                                 static_cast<int>(J_d_->getNnz()));
+      map_triplet_to_csr<double, int>
+          <<<gridsize, blocksize>>>(J_d_values,
+                                   Jac_d_values,
+                                   J_d_csr_to_triplet_device_,
+                                   static_cast<int>(J_d_nnz));
+    }
 
 #ifdef HIOP_USE_CUDA
-    if(cudaGetLastError() != cudaSuccess ||
+    if(cudaGetLastError() != cudaSuccess) {
+      nlp_->log->printf(hovError, "Failed to update ReSolve HyKKT matrix blocks on CUDA.\n");
+      return false;
+    }
+
+    if(D_s_nnz > 0 &&
        cudaMemcpy(D_s_values,
                   Hd_values,
-                  static_cast<size_t>(D_s_->getNnz()) * sizeof(double),
+                  static_cast<size_t>(D_s_nnz) * sizeof(double),
                   cudaMemcpyDeviceToDevice) != cudaSuccess) {
       nlp_->log->printf(hovError, "Failed to update ReSolve HyKKT matrix blocks on CUDA.\n");
       return false;
     }
 #elif defined(HIOP_USE_HIP)
-    if(hipGetLastError() != hipSuccess ||
+    if(hipGetLastError() != hipSuccess) {
+      nlp_->log->printf(hovError, "Failed to update ReSolve HyKKT matrix blocks on HIP.\n");
+      return false;
+    }
+
+    if(D_s_nnz > 0 &&
        hipMemcpy(D_s_values,
                  Hd_values,
-                 static_cast<size_t>(D_s_->getNnz()) * sizeof(double),
+                 static_cast<size_t>(D_s_nnz) * sizeof(double),
                  hipMemcpyDeviceToDevice) != hipSuccess) {
       nlp_->log->printf(hovError, "Failed to update ReSolve HyKKT matrix blocks on HIP.\n");
       return false;
@@ -632,41 +761,40 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
   double* J_values = J_->getValues(ReSolve::memory::HOST);
   double* J_d_values = J_d_->getValues(ReSolve::memory::HOST);
 
-  if(!H_values || !D_s_values || !J_values || !J_d_values) {
-    nlp_->log->printf(hovError, "Failed to access ReSolve HyKKT matrix values.\n");
-    return false;
-  }
-
   const double* Hess_values = HessSp_->M();
   const double* Jac_c_values = Jac_cSp_->M();
   const double* Jac_d_values = Jac_dSp_->M();
   const double* Hx_values = Hx_->local_data();
   const double* Hd_values = Hd_->local_data();
 
-  if(!Hess_values || !Jac_c_values || !Jac_d_values || !Hx_values || !Hd_values) {
-    nlp_->log->printf(hovError, "Failed to access HiOp KKT matrix block values.\n");
+  if((H_nnz > 0 && (!H_values || !Hess_values || !H_csr_to_triplet_host_)) ||
+     (Hx_size > 0 && (!H_values || !Hx_values || !H_diag_to_csr_host_)) ||
+     (D_s_nnz > 0 && (!D_s_values || !Hd_values)) ||
+     (J_nnz > 0 && (!J_values || !Jac_c_values || !J_csr_to_triplet_host_)) ||
+     (J_d_nnz > 0 && (!J_d_values || !Jac_d_values || !J_d_csr_to_triplet_host_))) {
+    nlp_->log->printf(hovError, "Failed to access HyKKT matrix block values.\n");
     return false;
   }
 
-  for(ReSolve::index_type k = 0; k < H_->getNnz(); ++k) {
+  for(ReSolve::index_type k = 0; k < H_nnz; ++k) {
     const int triplet = H_csr_to_triplet_host_[k];
     H_values[k] = triplet >= 0 ? Hess_values[triplet] : 0.0;
   }
 
-  for(index_type i = 0; i < Hx_->get_size(); ++i) {
+  for(index_type i = 0; i < Hx_size; ++i) {
     assert(H_diag_to_csr_host_[i] >= 0);
     H_values[H_diag_to_csr_host_[i]] += Hx_values[i];
   }
 
-  for(ReSolve::index_type k = 0; k < J_->getNnz(); ++k) {
+  for(ReSolve::index_type k = 0; k < J_nnz; ++k) {
     J_values[k] = Jac_c_values[J_csr_to_triplet_host_[k]];
   }
 
-  for(ReSolve::index_type k = 0; k < J_d_->getNnz(); ++k) {
+  for(ReSolve::index_type k = 0; k < J_d_nnz; ++k) {
     J_d_values[k] = Jac_d_values[J_d_csr_to_triplet_host_[k]];
   }
 
-  for(ReSolve::index_type k = 0; k < D_s_->getNnz(); ++k) {
+  for(ReSolve::index_type k = 0; k < D_s_nnz; ++k) {
     D_s_values[k] = Hd_values[k];
   }
 
@@ -733,17 +861,13 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::build_kkt_matrix(const hiopPDPert
     }
   }
 
-  if(!update_matrix_blocks()) {
-  return false;
-}
-
   if(nullptr == hykkt_solver_) {
-  if(!initialize_solver()) {
-    return false;
+    if(!initialize_solver()) {
+      return false;
+    }
   }
-}
 
-return true;
+  return true;
 }
 
 bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
@@ -764,6 +888,10 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
   assert(s_);
   assert(y_);
   assert(y_d_);
+
+  if(!update_matrix_blocks()) {
+    return false;
+  }
 
   const auto memspace =
       nlp_->options->GetString("mem_space") == "device"
