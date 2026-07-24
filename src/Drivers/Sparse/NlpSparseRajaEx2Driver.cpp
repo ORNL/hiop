@@ -335,6 +335,9 @@ int main(int argc, char** argv)
     // Inner iterative refinement for RF-based sparse solver paths.
     if(use_evloser_cuda_rf || use_evloser_hip_rf) {
       nlp.options->SetIntegerValue("ir_inner_maxit", 5);
+      nlp.options->SetIntegerValue("ir_inner_conv_cond", 2);
+      nlp.options->SetStringValue("ir_inner_gs_scheme", "cgs2");
+      nlp.options->SetNumericValue("ir_inner_tol", 1e-8);
     }
 
     nlp.options->SetStringValue("duals_init", "zero");
