@@ -78,7 +78,7 @@ bool copy_mapping_to_device(int*& dst, const int* src, size_t count)
   }
 
   if(hipMemcpy(dst, src, count * sizeof(int), hipMemcpyHostToDevice) != hipSuccess) {
-    hipFree(dst);
+    (void)hipFree(dst);
     dst = nullptr;
     return false;
   }
@@ -260,10 +260,10 @@ hiopKKTLinSysCompressedSparseXDYcYdHyKKT::~hiopKKTLinSysCompressedSparseXDYcYdHy
 #endif
 
 #ifdef HIOP_USE_HIP
-  if(H_csr_to_triplet_device_) hipFree(H_csr_to_triplet_device_);
-  if(H_diag_to_csr_device_) hipFree(H_diag_to_csr_device_);
-  if(J_csr_to_triplet_device_) hipFree(J_csr_to_triplet_device_);
-  if(J_d_csr_to_triplet_device_) hipFree(J_d_csr_to_triplet_device_);
+  if(H_csr_to_triplet_device_) (void)hipFree(H_csr_to_triplet_device_);
+  if(H_diag_to_csr_device_) (void)hipFree(H_diag_to_csr_device_);
+  if(J_csr_to_triplet_device_) (void)hipFree(J_csr_to_triplet_device_);
+  if(J_d_csr_to_triplet_device_) (void)hipFree(J_d_csr_to_triplet_device_);
 #endif
 
   delete vector_handler_;
