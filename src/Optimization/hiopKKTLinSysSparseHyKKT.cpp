@@ -916,10 +916,10 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
   const ReSolve::real_type error = hykkt_solver_->solve();
   nlp_->runStats.kkt.tmSolveInner.stop();
 
-  // HyKKT returns the relative residual; its solver tests use 1e-2 as the success threshold.
+  // HyKKT solver tests use 1e-2 as the success threshold.
   if(!std::isfinite(error) || error >= 1e-2) {
     nlp_->log->printf(hovError,
-                      "ReSolve HyKKT solve failed with relative residual %e.\n",
+                      "ReSolve HyKKT solve failed with residual %e.\n",
                       error);
     return false;
   }
