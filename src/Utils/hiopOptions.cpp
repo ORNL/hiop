@@ -1011,6 +1011,19 @@ void hiopOptionsNLP::register_options()
                         "'rf' selects the available CUDA or HIP RF implementation. ");
   }
 
+  // HyKKT options
+  register_num_option("hykkt_gamma",
+                      1e4,
+                      1e-16,
+                      1e16,
+                      "HyKKT penalty parameter gamma (default is 1e4). ");
+
+  register_num_option("hykkt_residual_tol",
+                      1e-2,
+                      1e-16,
+                      1.0,
+                      "Maximum accepted relative residual for a HyKKT solve (default is 1e-2). ");
+
   register_int_option("ir_inner_restart", 20, 1, 100, "(F)GMRES restart value (default is 20). ");
 
   register_num_option("ir_inner_tol", 1e-12, 1e-16, 1e-1, "(F)GMRES tolerance (default is 1e-12). ");

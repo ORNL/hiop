@@ -619,8 +619,7 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_solver()
   hykkt_solver_->setMatrixBlocks(H_, D_s_, J_, J_d_);
   hykkt_solver_->setRHSBlocks(r_x_, r_s_, r_y_, r_yd_);
   hykkt_solver_->setLHSPointers(x_, s_, y_, y_d_);
-  // Use the gamma value exercised by ReSolve's HyKKT solver tests.
-  hykkt_solver_->setGamma(10000.0);
+  hykkt_solver_->setGamma(nlp_->options->GetNumeric("hykkt_gamma"));
   hykkt_solver_->addHandlers(matrix_handler_, vector_handler_);
 
   return true;
@@ -916,8 +915,9 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
   const ReSolve::real_type error = hykkt_solver_->solve();
   nlp_->runStats.kkt.tmSolveInner.stop();
 
-  // HyKKT solver tests use 1e-2 as the success threshold.
-  if(!std::isfinite(error) || error >= 1e-2) {
+  const ReSolve::real_type residual_tol =
+      nlp_->options->GetNumeric("hykkt_residual_tol");
+  if(!std::isfinite(error) || error >= residual_tol) {
     nlp_->log->printf(hovError,
                       "ReSolve HyKKT solve failed with residual %e.\n",
                       error);
