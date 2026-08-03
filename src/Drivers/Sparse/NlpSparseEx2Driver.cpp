@@ -16,7 +16,6 @@ static bool parse_arguments(int argc,
                             bool& self_check,
                             bool& inertia_free,
                             bool& use_cusolver,
-                            bool& use_resolve,
                             bool& use_evloser,
                             bool& use_ginkgo,
                             bool& use_ginkgo_cuda,
@@ -26,7 +25,6 @@ static bool parse_arguments(int argc,
   n = 3;
   inertia_free = false;
   use_cusolver = false;
-  use_resolve = false;
   use_evloser = false;
   use_ginkgo = false;
   use_ginkgo_cuda = false;
@@ -149,6 +147,15 @@ static bool parse_arguments(int argc,
   }
 #endif
 
+// The cuSOLVER Cholesky path in this driver also requires CoinHSL.
+#ifndef HIOP_USE_COINHSL
+  if(use_cusolver) {
+    printf("HiOp built without CoinHSL support. ");
+    printf("Using default instead of cuSOLVER ...\n");
+    use_cusolver = false;
+  }
+#endif
+
 #ifndef HIOP_USE_EVLOSER
   if(use_evloser) {
     printf("HiOp built without EVLOSER support. ");
@@ -157,17 +164,10 @@ static bool parse_arguments(int argc,
   }
 #endif
 
-// Use cuSOLVER's LU factorization, if it was configured
-#ifdef HIOP_USE_RESOLVE
-  if(use_cusolver) {
-    use_resolve = true;
-  }
-#endif
-
-  // Sparse LU solvers require the inertia-free approach.
+  // These sparse solver paths require the inertia-free approach.
   if((use_cusolver || use_evloser) && !(inertia_free)) {
     inertia_free = true;
-    printf("Selected LU sparse solver requires inertia free approach. ");
+    printf("Selected sparse solver requires the inertia-free approach. ");
     printf("Enabling now ...\n");
   }
 
@@ -200,7 +200,7 @@ static void usage(const char* exeName)
   printf(
       "  '-selfcheck': compares the optimal objective with a previously saved value for the "
       "problem specified by 'problem_size'. [optional]\n");
-  printf("  '-cusolver': use cuSOLVER linear solver [optional]\n");
+  printf("  '-cusolver': use cuSOLVER Cholesky for the condensed solve [optional]\n");
   printf("  '-evloser': use EVLOSER linear solver [optional]\n");
   printf("  '-ginkgo': use GINKGO linear solver [optional]\n");
 }
@@ -225,7 +225,6 @@ int main(int argc, char** argv)
   size_type n = 50;
   bool inertia_free = false;
   bool use_cusolver = false;
-  bool use_resolve = false;
   bool use_evloser = false;
   bool use_ginkgo = false;
   bool use_ginkgo_cuda = false;
@@ -236,7 +235,6 @@ int main(int argc, char** argv)
                       selfCheck,
                       inertia_free,
                       use_cusolver,
-                      use_resolve,
                       use_evloser,
                       use_ginkgo,
                       use_ginkgo_cuda,
@@ -265,10 +263,10 @@ int main(int argc, char** argv)
     if(inertia_free) {
       nlp.options->SetStringValue("fact_acceptor", "inertia_free");
     }
-    if(use_resolve || use_evloser) {
+    if(use_evloser) {
       nlp.options->SetStringValue("duals_init", "zero");
       nlp.options->SetStringValue("linsol_mode", "speculative");
-      nlp.options->SetStringValue("linear_solver_sparse", use_evloser ? "evloser" : "resolve");
+      nlp.options->SetStringValue("linear_solver_sparse", "evloser");
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
 #if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
       nlp.options->SetStringValue("resolve_refactorization", "rf");

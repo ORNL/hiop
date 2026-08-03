@@ -11,7 +11,6 @@ set(hiopLinAlg_INTERFACE_HEADERS
   hiopLinSolverSparseGinkgo.hpp
   hiopLinSolverSparseSTRUMPACK.hpp
   hiopLinSolverSparsePARDISO.hpp
-  hiopLinSolverSparseReSolve.hpp
   hiopLinSolverSparseEVLOSER.hpp
   hiopLinSolverUMFPACKZ.hpp
   hiopLinSolverCholCuSparse.hpp
@@ -98,10 +97,6 @@ set(hiopLinAlg_PARDISO_SRC
   hiopLinSolverSparsePARDISO.cpp
 )
 
-set(hiopLinAlg_CUSOLVER_LU_SRC
-  hiopLinSolverSparseReSolve.cpp
-)
-
 set(hiopLinAlg_EVLOSER_SRC
   hiopLinSolverSparseEVLOSER.cpp
 )
@@ -153,11 +148,6 @@ if(HIOP_SPARSE)
     if(HIOP_USE_PARDISO)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_PARDISO_SRC})
     endif(HIOP_USE_PARDISO)
-    if(HIOP_USE_RESOLVE)
-      add_subdirectory(ReSolve) 
-      list(APPEND hiopLinAlg_SRC ${hiopLinAlg_CUSOLVER_LU_SRC})
-      set_source_files_properties(${hiopLinAlg_CUSOLVER_LU_SRC} PROPERTIES LANGUAGE CUDA)
-    endif(HIOP_USE_RESOLVE)
     if(HIOP_USE_EVLOSER)
       find_package(ReSolve CONFIG REQUIRED)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_EVLOSER_SRC})
@@ -260,8 +250,4 @@ install(
   )
 
 add_library(hiopLinAlg OBJECT ${hiopLinAlg_SRC})
-if(HIOP_USE_RESOLVE)
-   target_link_libraries(hiop_tpl INTERFACE ReSolve)
-   install(TARGETS ReSolve EXPORT hiop-targets)
-endif()
 target_link_libraries(hiopLinAlg PRIVATE hiop_tpl)
