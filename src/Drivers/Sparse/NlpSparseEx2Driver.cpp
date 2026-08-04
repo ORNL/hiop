@@ -17,6 +17,10 @@ static bool parse_arguments(int argc,
                             bool& inertia_free,
                             bool& use_cusolver,
                             bool& use_evloser,
+                            bool& use_evloser_cpu,
+                            bool& use_evloser_cuda_glu,
+                            bool& use_evloser_cuda_rf,
+                            bool& use_evloser_hip_rf,
                             bool& use_ginkgo,
                             bool& use_ginkgo_cuda,
                             bool& use_ginkgo_hip)
@@ -26,6 +30,10 @@ static bool parse_arguments(int argc,
   inertia_free = false;
   use_cusolver = false;
   use_evloser = false;
+  use_evloser_cpu = false;
+  use_evloser_cuda_glu = false;
+  use_evloser_cuda_rf = false;
+  use_evloser_hip_rf = false;
   use_ginkgo = false;
   use_ginkgo_cuda = false;
   use_ginkgo_hip = false;
@@ -44,6 +52,14 @@ static bool parse_arguments(int argc,
         use_cusolver = true;
       } else if(std::string(argv[4]) == "-evloser") {
         use_evloser = true;
+      } else if(std::string(argv[4]) == "-evloser_cpu") {
+        use_evloser_cpu = true;
+      } else if(std::string(argv[4]) == "-evloser_cuda_glu") {
+        use_evloser_cuda_glu = true;
+      } else if(std::string(argv[4]) == "-evloser_cuda_rf") {
+        use_evloser_cuda_rf = true;
+      } else if(std::string(argv[4]) == "-evloser_hip_rf") {
+        use_evloser_hip_rf = true;
       } else if(std::string(argv[4]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[4]) == "-ginkgo_cuda") {
@@ -69,6 +85,14 @@ static bool parse_arguments(int argc,
         use_cusolver = true;
       } else if(std::string(argv[3]) == "-evloser") {
         use_evloser = true;
+      } else if(std::string(argv[3]) == "-evloser_cpu") {
+        use_evloser_cpu = true;
+      } else if(std::string(argv[3]) == "-evloser_cuda_glu") {
+        use_evloser_cuda_glu = true;
+      } else if(std::string(argv[3]) == "-evloser_cuda_rf") {
+        use_evloser_cuda_rf = true;
+      } else if(std::string(argv[3]) == "-evloser_hip_rf") {
+        use_evloser_hip_rf = true;
       } else if(std::string(argv[3]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[3]) == "-ginkgo_cuda") {
@@ -94,6 +118,14 @@ static bool parse_arguments(int argc,
         use_cusolver = true;
       } else if(std::string(argv[2]) == "-evloser") {
         use_evloser = true;
+      } else if(std::string(argv[2]) == "-evloser_cpu") {
+        use_evloser_cpu = true;
+      } else if(std::string(argv[2]) == "-evloser_cuda_glu") {
+        use_evloser_cuda_glu = true;
+      } else if(std::string(argv[2]) == "-evloser_cuda_rf") {
+        use_evloser_cuda_rf = true;
+      } else if(std::string(argv[2]) == "-evloser_hip_rf") {
+        use_evloser_hip_rf = true;
       } else if(std::string(argv[2]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[2]) == "-ginkgo_cuda") {
@@ -119,6 +151,14 @@ static bool parse_arguments(int argc,
         use_cusolver = true;
       } else if(std::string(argv[1]) == "-evloser") {
         use_evloser = true;
+      } else if(std::string(argv[1]) == "-evloser_cpu") {
+        use_evloser_cpu = true;
+      } else if(std::string(argv[1]) == "-evloser_cuda_glu") {
+        use_evloser_cuda_glu = true;
+      } else if(std::string(argv[1]) == "-evloser_cuda_rf") {
+        use_evloser_cuda_rf = true;
+      } else if(std::string(argv[1]) == "-evloser_hip_rf") {
+        use_evloser_hip_rf = true;
       } else if(std::string(argv[1]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[1]) == "-ginkgo_cuda") {
@@ -157,15 +197,36 @@ static bool parse_arguments(int argc,
 #endif
 
 #ifndef HIOP_USE_EVLOSER
-  if(use_evloser) {
+  if(use_evloser || use_evloser_cpu || use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf) {
     printf("HiOp built without EVLOSER support. ");
     printf("Using default linear solver ...\n");
     use_evloser = false;
+    use_evloser_cpu = false;
+    use_evloser_cuda_glu = false;
+    use_evloser_cuda_rf = false;
+    use_evloser_hip_rf = false;
   }
 #endif
 
+#ifndef HIOP_USE_CUDA
+  if(use_evloser_cuda_glu || use_evloser_cuda_rf) {
+    printf("HiOp built without CUDA support. Cannot use the selected EVLOSER backend.\n");
+    return false;
+  }
+#endif
+
+#ifndef HIOP_USE_HIP
+  if(use_evloser_hip_rf) {
+    printf("HiOp built without HIP support. Cannot use the selected EVLOSER backend.\n");
+    return false;
+  }
+#endif
+
+  const bool use_any_evloser =
+      use_evloser || use_evloser_cpu || use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf;
+
   // These sparse solver paths require the inertia-free approach.
-  if((use_cusolver || use_evloser) && !(inertia_free)) {
+  if((use_cusolver || use_any_evloser) && !(inertia_free)) {
     inertia_free = true;
     printf("Selected sparse solver requires the inertia-free approach. ");
     printf("Enabling now ...\n");
@@ -202,6 +263,10 @@ static void usage(const char* exeName)
       "problem specified by 'problem_size'. [optional]\n");
   printf("  '-cusolver': use cuSOLVER Cholesky for the condensed solve [optional]\n");
   printf("  '-evloser': use EVLOSER linear solver [optional]\n");
+  printf("  '-evloser_cpu': use EVLOSER with KLU [optional]\n");
+  printf("  '-evloser_cuda_glu': use EVLOSER with CUDA GLU [optional]\n");
+  printf("  '-evloser_cuda_rf': use EVLOSER with CUDA RF [optional]\n");
+  printf("  '-evloser_hip_rf': use EVLOSER with HIP RF [optional]\n");
   printf("  '-ginkgo': use GINKGO linear solver [optional]\n");
 }
 
@@ -226,6 +291,10 @@ int main(int argc, char** argv)
   bool inertia_free = false;
   bool use_cusolver = false;
   bool use_evloser = false;
+  bool use_evloser_cpu = false;
+  bool use_evloser_cuda_glu = false;
+  bool use_evloser_cuda_rf = false;
+  bool use_evloser_hip_rf = false;
   bool use_ginkgo = false;
   bool use_ginkgo_cuda = false;
   bool use_ginkgo_hip = false;
@@ -236,6 +305,10 @@ int main(int argc, char** argv)
                       inertia_free,
                       use_cusolver,
                       use_evloser,
+                      use_evloser_cpu,
+                      use_evloser_cuda_glu,
+                      use_evloser_cuda_rf,
+                      use_evloser_hip_rf,
                       use_ginkgo,
                       use_ginkgo_cuda,
                       use_ginkgo_hip)) {
@@ -246,6 +319,8 @@ int main(int argc, char** argv)
     return 1;
   }
 
+  const bool use_any_evloser =
+      use_evloser || use_evloser_cpu || use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf;
   bool convex_obj = false;
   bool rankdefic_Jac_eq = true;
   bool rankdefic_Jac_ineq = true;
@@ -263,17 +338,24 @@ int main(int argc, char** argv)
     if(inertia_free) {
       nlp.options->SetStringValue("fact_acceptor", "inertia_free");
     }
-    if(use_evloser) {
+    if(use_any_evloser) {
       nlp.options->SetStringValue("duals_init", "zero");
       nlp.options->SetStringValue("linsol_mode", "speculative");
       nlp.options->SetStringValue("linear_solver_sparse", "evloser");
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
-      nlp.options->SetStringValue("resolve_refactorization", "rf");
-      nlp.options->SetStringValue("compute_mode", "hybrid");
-      nlp.options->SetIntegerValue("ir_inner_conv_cond", 2);
-      nlp.options->SetStringValue("ir_inner_gs_scheme", "cgs2");
-      nlp.options->SetNumericValue("ir_inner_tol", 1e-8);
+#ifdef HIOP_USE_GPU
+      const bool use_evloser_rf = use_evloser || use_evloser_cuda_rf || use_evloser_hip_rf;
+
+      if(use_evloser_cuda_glu) {
+        nlp.options->SetStringValue("resolve_refactorization", "glu");
+        nlp.options->SetStringValue("compute_mode", "hybrid");
+      } else if(use_evloser_rf) {
+        nlp.options->SetStringValue("resolve_refactorization", "rf");
+        nlp.options->SetStringValue("compute_mode", "hybrid");
+        nlp.options->SetIntegerValue("ir_inner_conv_cond", 2);
+        nlp.options->SetStringValue("ir_inner_gs_scheme", "cgs2");
+        nlp.options->SetNumericValue("ir_inner_tol", 1e-8);
+      }
 #endif
     }
     if(use_ginkgo) {
