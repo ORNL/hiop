@@ -190,7 +190,11 @@ protected:
 
   hiopMatrixSparse* M_host_;
 
-  bool use_device_;
+  /// HiOp matrix and solve-vector data reside in device memory.
+  bool input_on_device_;
+
+  /// ReSolve uses a CUDA or HIP refactorization backend.
+  bool use_accelerator_;
   int n_;
   int nnz_;
 
