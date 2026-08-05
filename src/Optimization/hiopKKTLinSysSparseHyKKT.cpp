@@ -616,7 +616,11 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_solver()
                                       J_->getNumRows(),
                                       memspace);
 
-  hykkt_solver_->setMatrixBlocks(H_, D_s_, J_, J_d_);
+  if(hykkt_solver_->setMatrixBlocks(H_, D_s_, J_, J_d_) != 0) {
+    nlp_->log->printf(hovError, "Failed to set ReSolve HyKKT matrix blocks.\n");
+    return false;
+  }
+
   hykkt_solver_->setRHSBlocks(r_x_, r_s_, r_y_, r_yd_);
   hykkt_solver_->setLHSPointers(x_, s_, y_, y_d_);
   hykkt_solver_->setGamma(nlp_->options->GetNumeric("hykkt_gamma"));
