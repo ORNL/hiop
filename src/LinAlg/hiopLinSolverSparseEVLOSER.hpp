@@ -194,7 +194,7 @@ protected:
   bool input_on_device_;
 
   /// ReSolve uses a CUDA or HIP refactorization backend.
-  bool use_accelerator_;
+  bool compute_on_device_;
   int n_;
   int nnz_;
 
