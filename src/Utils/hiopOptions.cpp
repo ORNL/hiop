@@ -1418,15 +1418,22 @@ void hiopOptionsNLP::ensure_consistence()
   auto kkt_linsys = GetString("KKTLinsys");
   auto sol_sp = GetString("linear_solver_sparse");
 
-  if(sol_sp == "hykkt" && kkt_linsys != "xdycyd") {
-    if(is_user_defined("linear_solver_sparse")) {
-      log_printf(hovWarning,
-                 "The option 'linear_solver_sparse=hykkt' requires 'KKTLinsys=xdycyd'. "
-                 "Will use 'linear_solver_sparse=auto'.\n");
+#ifdef HIOP_USE_RESOLVE
+  if(sol_sp == "hykkt") {
+    if(kkt_linsys == "auto") {
+      set_val("KKTLinsys", "xdycyd");
+      kkt_linsys = "xdycyd";
+    } else if(kkt_linsys != "xdycyd") {
+      if(is_user_defined("linear_solver_sparse")) {
+        log_printf(hovWarning,
+                   "The option 'linear_solver_sparse=hykkt' requires 'KKTLinsys=xdycyd'. "
+                   "Will use 'linear_solver_sparse=auto'.\n");
+      }
+      set_val("linear_solver_sparse", "auto");
+      sol_sp = "auto";
     }
-    set_val("linear_solver_sparse", "auto");
-    sol_sp = "auto";
   }
+#endif
 
   if(kkt_linsys == "full") {
     if(sol_sp != "resolve" && sol_sp != "pardiso" && sol_sp != "strumpack" && sol_sp != "auto") {
