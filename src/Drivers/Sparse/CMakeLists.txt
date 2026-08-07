@@ -58,8 +58,7 @@ add_test(NAME NlpSparse1_2 COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx1.exe>" "
 if(HIOP_USE_EVLOSER)
   add_test(NAME NlpSparse1_EVLOSER COMMAND ${RUNCMD} "$<TARGET_FILE:NlpSparseEx1.exe>" "500" "-evloser" "-selfcheck")
 
-  # Verify the selected refactorization and iterative-refinement mode by
-  # failing on every unsupported runtime alternative.
+  # Fail if EVLOSER uses an unexpected backend or iterative-refinement mode.
   if(HIOP_USE_CUDA)
     set_tests_properties(NlpSparse1_EVLOSER PROPERTIES FAIL_REGULAR_EXPRESSION "Refactorization: klu;Refactorization: glu;Refactorization: rocSolverRf;Use IR: no")
   elseif(HIOP_USE_HIP)

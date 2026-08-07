@@ -339,7 +339,6 @@ int main(int argc, char** argv)
       nlp.options->SetStringValue("fact_acceptor", "inertia_free");
     }
     if(use_any_evloser) {
-      nlp.options->SetStringValue("duals_init", "zero");
       nlp.options->SetStringValue("linsol_mode", "speculative");
       nlp.options->SetStringValue("linear_solver_sparse", "evloser");
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);

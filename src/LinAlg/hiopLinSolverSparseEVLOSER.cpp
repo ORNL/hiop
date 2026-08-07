@@ -244,8 +244,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
 #ifdef HIOP_USE_GPU
   const std::string compute_mode = nlp_->options->GetString("compute_mode");
 
-  // Preserve device-resident execution and enable accelerator backends for
-  // explicit hybrid and gpu modes. Host-resident auto mode continues to use KLU.
+  // Select the ReSolve compute location independently of the HiOp input location.
   compute_on_device_ = input_on_device_ || compute_mode == "hybrid" || compute_mode == "gpu";
 #endif
 
