@@ -19,7 +19,7 @@ static bool parse_arguments(int argc,
                             bool& use_evloser,
                             bool& use_evloser_cuda_glu,
                             bool& use_evloser_cuda_rf,
-                            bool& use_evloser_hip_rf,
+                            bool& use_evloser_hip,
                             bool& use_ginkgo,
                             bool& use_ginkgo_cuda,
                             bool& use_ginkgo_hip)
@@ -31,7 +31,7 @@ static bool parse_arguments(int argc,
   use_evloser = false;
   use_evloser_cuda_glu = false;
   use_evloser_cuda_rf = false;
-  use_evloser_hip_rf = false;
+  use_evloser_hip = false;
   use_ginkgo = false;
   use_ginkgo_cuda = false;
   use_ginkgo_hip = false;
@@ -56,9 +56,9 @@ static bool parse_arguments(int argc,
       } else if(std::string(argv[4]) == "-evloser_cuda_rf") {
         use_evloser = true;
         use_evloser_cuda_rf = true;
-      } else if(std::string(argv[4]) == "-evloser_hip_rf") {
+      } else if(std::string(argv[4]) == "-evloser_hip") {
         use_evloser = true;
-        use_evloser_hip_rf = true;
+        use_evloser_hip = true;
       } else if(std::string(argv[4]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[4]) == "-ginkgo_cuda") {
@@ -90,9 +90,9 @@ static bool parse_arguments(int argc,
       } else if(std::string(argv[3]) == "-evloser_cuda_rf") {
         use_evloser = true;
         use_evloser_cuda_rf = true;
-      } else if(std::string(argv[3]) == "-evloser_hip_rf") {
+      } else if(std::string(argv[3]) == "-evloser_hip") {
         use_evloser = true;
-        use_evloser_hip_rf = true;
+        use_evloser_hip = true;
       } else if(std::string(argv[3]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[3]) == "-ginkgo_cuda") {
@@ -124,9 +124,9 @@ static bool parse_arguments(int argc,
       } else if(std::string(argv[2]) == "-evloser_cuda_rf") {
         use_evloser = true;
         use_evloser_cuda_rf = true;
-      } else if(std::string(argv[2]) == "-evloser_hip_rf") {
+      } else if(std::string(argv[2]) == "-evloser_hip") {
         use_evloser = true;
-        use_evloser_hip_rf = true;
+        use_evloser_hip = true;
       } else if(std::string(argv[2]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[2]) == "-ginkgo_cuda") {
@@ -158,9 +158,9 @@ static bool parse_arguments(int argc,
       } else if(std::string(argv[1]) == "-evloser_cuda_rf") {
         use_evloser = true;
         use_evloser_cuda_rf = true;
-      } else if(std::string(argv[1]) == "-evloser_hip_rf") {
+      } else if(std::string(argv[1]) == "-evloser_hip") {
         use_evloser = true;
-        use_evloser_hip_rf = true;
+        use_evloser_hip = true;
       } else if(std::string(argv[1]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[1]) == "-ginkgo_cuda") {
@@ -205,7 +205,7 @@ static bool parse_arguments(int argc,
     use_evloser = false;
     use_evloser_cuda_glu = false;
     use_evloser_cuda_rf = false;
-    use_evloser_hip_rf = false;
+    use_evloser_hip = false;
   }
 #endif
 
@@ -217,7 +217,7 @@ static bool parse_arguments(int argc,
 #endif
 
 #ifndef HIOP_USE_HIP
-  if(use_evloser_hip_rf) {
+  if(use_evloser_hip) {
     printf("HiOp built without HIP support. Cannot use the selected EVLOSER backend.\n");
     return false;
   }
@@ -263,7 +263,7 @@ static void usage(const char* exeName)
   printf("  '-evloser': use EVLOSER linear solver [optional]\n");
   printf("  '-evloser_cuda_glu': use EVLOSER with CUDA GLU [optional]\n");
   printf("  '-evloser_cuda_rf': use EVLOSER with CUDA RF [optional]\n");
-  printf("  '-evloser_hip_rf': use EVLOSER with HIP RF [optional]\n");
+  printf("  '-evloser_hip': use EVLOSER with HIP RF [optional]\n");
   printf("  '-ginkgo': use GINKGO linear solver [optional]\n");
 }
 
@@ -290,7 +290,7 @@ int main(int argc, char** argv)
   bool use_evloser = false;
   bool use_evloser_cuda_glu = false;
   bool use_evloser_cuda_rf = false;
-  bool use_evloser_hip_rf = false;
+  bool use_evloser_hip = false;
   bool use_ginkgo = false;
   bool use_ginkgo_cuda = false;
   bool use_ginkgo_hip = false;
@@ -303,7 +303,7 @@ int main(int argc, char** argv)
                       use_evloser,
                       use_evloser_cuda_glu,
                       use_evloser_cuda_rf,
-                      use_evloser_hip_rf,
+                      use_evloser_hip,
                       use_ginkgo,
                       use_ginkgo_cuda,
                       use_ginkgo_hip)) {
