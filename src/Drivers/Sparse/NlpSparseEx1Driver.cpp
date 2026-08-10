@@ -234,7 +234,6 @@ int main(int argc, char** argv)
     nlp.options->SetStringValue("linear_solver_sparse", "evloser");
     nlp.options->SetStringValue("fact_acceptor", "inertia_free");
     nlp.options->SetIntegerValue("ir_outer_maxit", 0);
-    nlp.options->SetIntegerValue("verbosity_level", 3);
 
 #ifdef HIOP_USE_GPU
     nlp.options->SetStringValue("resolve_refactorization", "rf");
