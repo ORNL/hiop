@@ -190,8 +190,6 @@ protected:
 
   hiopMatrixSparse* M_host_;
 
-  bool input_on_device_;
-  bool compute_on_device_;
   int n_;
   int nnz_;
 
