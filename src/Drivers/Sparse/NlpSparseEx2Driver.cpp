@@ -17,7 +17,6 @@ static bool parse_arguments(int argc,
                             bool& inertia_free,
                             bool& use_cusolver,
                             bool& use_evloser,
-                            bool& use_evloser_cpu,
                             bool& use_evloser_cuda_glu,
                             bool& use_evloser_cuda_rf,
                             bool& use_evloser_hip_rf,
@@ -30,7 +29,6 @@ static bool parse_arguments(int argc,
   inertia_free = false;
   use_cusolver = false;
   use_evloser = false;
-  use_evloser_cpu = false;
   use_evloser_cuda_glu = false;
   use_evloser_cuda_rf = false;
   use_evloser_hip_rf = false;
@@ -52,13 +50,14 @@ static bool parse_arguments(int argc,
         use_cusolver = true;
       } else if(std::string(argv[4]) == "-evloser") {
         use_evloser = true;
-      } else if(std::string(argv[4]) == "-evloser_cpu") {
-        use_evloser_cpu = true;
       } else if(std::string(argv[4]) == "-evloser_cuda_glu") {
+        use_evloser = true;
         use_evloser_cuda_glu = true;
       } else if(std::string(argv[4]) == "-evloser_cuda_rf") {
+        use_evloser = true;
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[4]) == "-evloser_hip_rf") {
+        use_evloser = true;
         use_evloser_hip_rf = true;
       } else if(std::string(argv[4]) == "-ginkgo") {
         use_ginkgo = true;
@@ -85,13 +84,14 @@ static bool parse_arguments(int argc,
         use_cusolver = true;
       } else if(std::string(argv[3]) == "-evloser") {
         use_evloser = true;
-      } else if(std::string(argv[3]) == "-evloser_cpu") {
-        use_evloser_cpu = true;
       } else if(std::string(argv[3]) == "-evloser_cuda_glu") {
+        use_evloser = true;
         use_evloser_cuda_glu = true;
       } else if(std::string(argv[3]) == "-evloser_cuda_rf") {
+        use_evloser = true;
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[3]) == "-evloser_hip_rf") {
+        use_evloser = true;
         use_evloser_hip_rf = true;
       } else if(std::string(argv[3]) == "-ginkgo") {
         use_ginkgo = true;
@@ -118,13 +118,14 @@ static bool parse_arguments(int argc,
         use_cusolver = true;
       } else if(std::string(argv[2]) == "-evloser") {
         use_evloser = true;
-      } else if(std::string(argv[2]) == "-evloser_cpu") {
-        use_evloser_cpu = true;
       } else if(std::string(argv[2]) == "-evloser_cuda_glu") {
+        use_evloser = true;
         use_evloser_cuda_glu = true;
       } else if(std::string(argv[2]) == "-evloser_cuda_rf") {
+        use_evloser = true;
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[2]) == "-evloser_hip_rf") {
+        use_evloser = true;
         use_evloser_hip_rf = true;
       } else if(std::string(argv[2]) == "-ginkgo") {
         use_ginkgo = true;
@@ -151,13 +152,14 @@ static bool parse_arguments(int argc,
         use_cusolver = true;
       } else if(std::string(argv[1]) == "-evloser") {
         use_evloser = true;
-      } else if(std::string(argv[1]) == "-evloser_cpu") {
-        use_evloser_cpu = true;
       } else if(std::string(argv[1]) == "-evloser_cuda_glu") {
+        use_evloser = true;
         use_evloser_cuda_glu = true;
       } else if(std::string(argv[1]) == "-evloser_cuda_rf") {
+        use_evloser = true;
         use_evloser_cuda_rf = true;
       } else if(std::string(argv[1]) == "-evloser_hip_rf") {
+        use_evloser = true;
         use_evloser_hip_rf = true;
       } else if(std::string(argv[1]) == "-ginkgo") {
         use_ginkgo = true;
@@ -197,11 +199,10 @@ static bool parse_arguments(int argc,
 #endif
 
 #ifndef HIOP_USE_EVLOSER
-  if(use_evloser || use_evloser_cpu || use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf) {
+  if(use_evloser) {
     printf("HiOp built without EVLOSER support. ");
     printf("Using default linear solver ...\n");
     use_evloser = false;
-    use_evloser_cpu = false;
     use_evloser_cuda_glu = false;
     use_evloser_cuda_rf = false;
     use_evloser_hip_rf = false;
@@ -222,11 +223,8 @@ static bool parse_arguments(int argc,
   }
 #endif
 
-  const bool use_any_evloser =
-      use_evloser || use_evloser_cpu || use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf;
-
   // These sparse solver paths require the inertia-free approach.
-  if((use_cusolver || use_any_evloser) && !(inertia_free)) {
+  if((use_cusolver || use_evloser) && !(inertia_free)) {
     inertia_free = true;
     printf("Selected sparse solver requires the inertia-free approach. ");
     printf("Enabling now ...\n");
@@ -263,7 +261,6 @@ static void usage(const char* exeName)
       "problem specified by 'problem_size'. [optional]\n");
   printf("  '-cusolver': use cuSOLVER Cholesky for the condensed solve [optional]\n");
   printf("  '-evloser': use EVLOSER linear solver [optional]\n");
-  printf("  '-evloser_cpu': use EVLOSER with KLU [optional]\n");
   printf("  '-evloser_cuda_glu': use EVLOSER with CUDA GLU [optional]\n");
   printf("  '-evloser_cuda_rf': use EVLOSER with CUDA RF [optional]\n");
   printf("  '-evloser_hip_rf': use EVLOSER with HIP RF [optional]\n");
@@ -291,7 +288,6 @@ int main(int argc, char** argv)
   bool inertia_free = false;
   bool use_cusolver = false;
   bool use_evloser = false;
-  bool use_evloser_cpu = false;
   bool use_evloser_cuda_glu = false;
   bool use_evloser_cuda_rf = false;
   bool use_evloser_hip_rf = false;
@@ -305,7 +301,6 @@ int main(int argc, char** argv)
                       inertia_free,
                       use_cusolver,
                       use_evloser,
-                      use_evloser_cpu,
                       use_evloser_cuda_glu,
                       use_evloser_cuda_rf,
                       use_evloser_hip_rf,
@@ -319,8 +314,6 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  const bool use_any_evloser =
-      use_evloser || use_evloser_cpu || use_evloser_cuda_glu || use_evloser_cuda_rf || use_evloser_hip_rf;
   bool convex_obj = false;
   bool rankdefic_Jac_eq = true;
   bool rankdefic_Jac_ineq = true;
@@ -338,19 +331,18 @@ int main(int argc, char** argv)
     if(inertia_free) {
       nlp.options->SetStringValue("fact_acceptor", "inertia_free");
     }
-    if(use_any_evloser) {
+    if(use_evloser) {
       nlp.options->SetStringValue("linsol_mode", "speculative");
       nlp.options->SetStringValue("linear_solver_sparse", "evloser");
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
 #ifdef HIOP_USE_GPU
-      const bool use_evloser_rf = use_evloser || use_evloser_cuda_rf || use_evloser_hip_rf;
+      nlp.options->SetStringValue("compute_mode", "hybrid");
 
+      // -evloser, -evloser_cuda_rf, and -evloser_hip use the same RF settings; only GLU needs separate options.
       if(use_evloser_cuda_glu) {
         nlp.options->SetStringValue("resolve_refactorization", "glu");
-        nlp.options->SetStringValue("compute_mode", "hybrid");
-      } else if(use_evloser_rf) {
+      } else {
         nlp.options->SetStringValue("resolve_refactorization", "rf");
-        nlp.options->SetStringValue("compute_mode", "hybrid");
         nlp.options->SetIntegerValue("ir_inner_conv_cond", 2);
         nlp.options->SetStringValue("ir_inner_gs_scheme", "cgs2");
         nlp.options->SetNumericValue("ir_inner_tol", 1e-8);
