@@ -15,7 +15,7 @@ static bool parse_arguments(int argc,
                             double& scal,
                             bool& self_check,
                             bool& use_pardiso,
-                            bool& use_evloser,
+                            bool& use_resolve,
                             bool& use_ginkgo,
                             bool& use_ginkgo_cuda,
                             bool& use_ginkgo_hip,
@@ -23,7 +23,7 @@ static bool parse_arguments(int argc,
 {
   self_check = false;
   use_pardiso = false;
-  use_evloser = false;
+  use_resolve = false;
   use_ginkgo = false;
   use_ginkgo_cuda = false;
   use_ginkgo_hip = false;
@@ -49,8 +49,8 @@ static bool parse_arguments(int argc,
         self_check = true;
       } else if(std::string(argv[4]) == "-pardiso") {
         use_pardiso = true;
-      } else if(std::string(argv[4]) == "-evloser") {
-        use_evloser = true;
+      } else if(std::string(argv[4]) == "-resolve") {
+        use_resolve = true;
       } else if(std::string(argv[4]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[4]) == "-ginkgo_cuda") {
@@ -69,8 +69,8 @@ static bool parse_arguments(int argc,
         self_check = true;
       } else if(std::string(argv[3]) == "-pardiso") {
         use_pardiso = true;
-      } else if(std::string(argv[3]) == "-evloser") {
-        use_evloser = true;
+      } else if(std::string(argv[3]) == "-resolve") {
+        use_resolve = true;
       } else if(std::string(argv[3]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[3]) == "-ginkgo_cuda") {
@@ -89,8 +89,8 @@ static bool parse_arguments(int argc,
         self_check = true;
       } else if(std::string(argv[2]) == "-pardiso") {
         use_pardiso = true;
-      } else if(std::string(argv[2]) == "-evloser") {
-        use_evloser = true;
+      } else if(std::string(argv[2]) == "-resolve") {
+        use_resolve = true;
       } else if(std::string(argv[2]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[2]) == "-ginkgo_cuda") {
@@ -117,8 +117,8 @@ static bool parse_arguments(int argc,
     scal = 1.0;
   }
 
-  if(use_evloser && use_pardiso) {
-    printf("Selected both EVLOSER and Pardiso. ");
+  if(use_resolve && use_pardiso) {
+    printf("Selected both ReSolve and Pardiso. ");
     printf("You can select only one linear solver.\n\n");
     return false;
   }
@@ -139,12 +139,12 @@ static bool parse_arguments(int argc,
   }
 #endif
 
-// If EVLOSER is not available, de-select it.
-#ifndef HIOP_USE_EVLOSER
-  if(use_evloser) {
-    printf("HiOp built without EVLOSER support. ");
+// If ReSolve is not available, de-select it.
+#ifndef HIOP_USE_RESOLVE
+  if(use_resolve) {
+    printf("HiOp built without ReSolve support. ");
     printf("Using default linear solver ...\n");
-    use_evloser = false;
+    use_resolve = false;
   }
 #endif
 
@@ -162,7 +162,7 @@ static void usage(const char* exeName)
       "  'scal_fact': scaling factor used for objective function and constraints [optional, "
       "default is 1.0]\n");
   printf("  '-pardiso': use Pardiso as the linear solver [optional]\n");
-  printf("  '-evloser': use EVLOSER as the linear solver [optional]\n");
+  printf("  '-resolve': use ReSolve as the linear solver [optional]\n");
   printf("  '-fr': force to reset feasibility in the 1st iteration [optional]\n");
   printf(
       "  '-selfcheck': compares the optimal objective with a previously saved value for the "
@@ -187,7 +187,7 @@ int main(int argc, char** argv)
 #endif
   bool selfCheck = false;
   bool use_pardiso = false;
-  bool use_evloser = false;
+  bool use_resolve = false;
   bool use_ginkgo = false;
   bool use_ginkgo_cuda = false;
   bool use_ginkgo_hip = false;
@@ -201,7 +201,7 @@ int main(int argc, char** argv)
                       scal,
                       selfCheck,
                       use_pardiso,
-                      use_evloser,
+                      use_resolve,
                       use_ginkgo,
                       use_ginkgo_cuda,
                       use_ginkgo_hip,
@@ -229,10 +229,10 @@ int main(int argc, char** argv)
   if(use_pardiso) {
     nlp.options->SetStringValue("linear_solver_sparse", "pardiso");
   }
-  if(use_evloser) {
+  if(use_resolve) {
     nlp.options->SetStringValue("duals_init", "zero");
     nlp.options->SetStringValue("linsol_mode", "speculative");
-    nlp.options->SetStringValue("linear_solver_sparse", "evloser");
+    nlp.options->SetStringValue("linear_solver_sparse", "resolve");
     // LU solver needs to use inertia free approach
     nlp.options->SetStringValue("fact_acceptor", "inertia_free");
     nlp.options->SetIntegerValue("ir_outer_maxit", 0);
