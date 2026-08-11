@@ -57,8 +57,8 @@
 #ifdef HIOP_USE_PARDISO
 #include "hiopLinSolverSparsePARDISO.hpp"
 #endif
-#ifdef HIOP_USE_EVLOSER
-#include "hiopLinSolverSparseEVLOSER.hpp"
+#ifdef HIOP_USE_RESOLVE
+#include "hiopLinSolverSparseReSolve.hpp"
 #endif
 #ifdef HIOP_USE_GINKGO
 #include "hiopLinSolverSparseGinkgo.hpp"
@@ -310,20 +310,20 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXYcYd::determineAndCreateLi
       ////////////////////////////////////////////////////////////////////////////////////////////////
       assert(nullptr == linSys_);
 
-#ifdef HIOP_USE_EVLOSER
-      if(linear_solver == "evloser") {
+#ifdef HIOP_USE_RESOLVE
+      if(linear_solver == "resolve") {
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
         if(fact_acceptor_ic) {
           nlp_->log->printf(hovError,
-                            "KKT_SPARSE_XYcYd linsys with EVLOSER does not support inertia correction. "
+                            "KKT_SPARSE_XYcYd linsys with ReSolve does not support inertia correction. "
                             "Please set option 'fact_acceptor' to 'inertia_free'.\n");
           assert(false);
           return nullptr;
         }
-        linsol_actual = "EVLOSER";
-        linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
+        linsol_actual = "ReSolve";
+        linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
       }
-#endif  // HIOP_USE_EVLOSER
+#endif  // HIOP_USE_RESOLVE
 
       if(linear_solver == "ma57" || linear_solver == "auto") {
 #ifdef HIOP_USE_COINHSL
@@ -376,21 +376,21 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXYcYd::determineAndCreateLi
       assert(nullptr == linSys_);
       assert(compute_mode != "gpu" && "KKT_SPARSE_XYcYd linsys: GPU compute mode not supported at this time.");
 
-#ifdef HIOP_USE_EVLOSER
-      if(nullptr == linSys_ && (linear_solver == "evloser" || linear_solver == "auto")) {
+#ifdef HIOP_USE_RESOLVE
+      if(nullptr == linSys_ && (linear_solver == "resolve" || linear_solver == "auto")) {
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
         if(fact_acceptor_ic) {
           nlp_->log->printf(hovError,
-                            "KKT_SPARSE_XYcYd linsys with EVLOSER does not support "
+                            "KKT_SPARSE_XYcYd linsys with ReSolve does not support "
                             "inertia correction. Please set option 'fact_acceptor' "
                             "to 'inertia_free'.\n");
           assert(false);
           return nullptr;
         }
-        linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
-        linsol_actual = "EVLOSER";
+        linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
+        linsol_actual = "ReSolve";
       }
-#endif  // HIOP_USE_EVLOSER
+#endif  // HIOP_USE_RESOLVE
 
       if((nullptr == linSys_ && linear_solver == "auto") || linear_solver == "strumpack") {
 #if defined(HIOP_USE_STRUMPACK)
@@ -703,20 +703,20 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
       // CPU compute mode
       /////////////////////////////////////////////////////////////////////////////////////////////
 
-#ifdef HIOP_USE_EVLOSER
-      if(linear_solver == "evloser") {
+#ifdef HIOP_USE_RESOLVE
+      if(linear_solver == "resolve") {
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
         if(fact_acceptor_ic) {
           nlp_->log->printf(hovError,
-                            "KKT_SPARSE_XDYcYd linsys with EVLOSER does not support inertia correction. "
+                            "KKT_SPARSE_XDYcYd linsys with ReSolve does not support inertia correction. "
                             "Please set option 'fact_acceptor' to 'inertia_free'.\n");
           assert(false);
           return nullptr;
         }
-        actual_lin_solver = "EVLOSER";
-        linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
+        actual_lin_solver = "ReSolve";
+        linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
       }
-#endif  // HIOP_USE_EVLOSER
+#endif  // HIOP_USE_RESOLVE
 
       if(linear_solver == "ma57" || linear_solver == "auto") {
 #ifdef HIOP_USE_COINHSL
@@ -774,21 +774,21 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
 
       // our first choice is cuSolver on hybrid compute mode
       assert(nullptr == linSys_);
-#ifdef HIOP_USE_EVLOSER
-      if(nullptr == linSys_ && (linear_solver == "evloser" || linear_solver == "auto")) {
+#ifdef HIOP_USE_RESOLVE
+      if(nullptr == linSys_ && (linear_solver == "resolve" || linear_solver == "auto")) {
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
         if(fact_acceptor_ic) {
           nlp_->log->printf(hovError,
-                            "KKT_SPARSE_XDYcYd linsys with EVLOSER does not support "
+                            "KKT_SPARSE_XDYcYd linsys with ReSolve does not support "
                             "inertia correction. Please set option 'fact_acceptor' "
                             "to 'inertia_free'.\n");
           assert(false);
           return nullptr;
         }
-        actual_lin_solver = "EVLOSER";
-        linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
+        actual_lin_solver = "ReSolve";
+        linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
       }
-#endif  // HIOP_USE_EVLOSER
+#endif  // HIOP_USE_RESOLVE
 
       if(nullptr == linSys_ && (linear_solver == "strumpack" || linear_solver == "auto")) {
 #if defined(HIOP_USE_STRUMPACK)
@@ -847,18 +847,18 @@ hiopLinSolverSymSparse* hiopKKTLinSysCompressedSparseXDYcYd::determineAndCreateL
       //       assert(false == safe_mode_);
       assert(nullptr == linSys_);
 
-#if defined(HIOP_USE_EVLOSER)
-      if(nullptr == linSys_ && (linear_solver == "evloser" || linear_solver == "auto")) {
+#if defined(HIOP_USE_RESOLVE)
+      if(nullptr == linSys_ && (linear_solver == "resolve" || linear_solver == "auto")) {
         auto* fact_acceptor_ic = dynamic_cast<hiopFactAcceptorIC*>(fact_acceptor_);
         if(fact_acceptor_ic) {
           nlp_->log->printf(hovError,
-                            "KKT_SPARSE_XDYcYd linsys with EVLOSER does not support inertia correction. "
+                            "KKT_SPARSE_XDYcYd linsys with ReSolve does not support inertia correction. "
                             "Please set option 'fact_acceptor' to 'inertia_free'.\n");
           assert(false);
           return nullptr;
         }
-        linSys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
-        nlp_->log->printf(hovScalars, "KKT_SPARSE_XDYcYd linsys: alloc EVLOSER size %d (%d cons) (gpu)\n", n, neq + nineq);
+        linSys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
+        nlp_->log->printf(hovScalars, "KKT_SPARSE_XDYcYd linsys: alloc ReSolve size %d (%d cons) (gpu)\n", n, neq + nineq);
       }
 #endif
 

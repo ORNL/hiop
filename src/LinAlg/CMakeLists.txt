@@ -11,7 +11,7 @@ set(hiopLinAlg_INTERFACE_HEADERS
   hiopLinSolverSparseGinkgo.hpp
   hiopLinSolverSparseSTRUMPACK.hpp
   hiopLinSolverSparsePARDISO.hpp
-  hiopLinSolverSparseEVLOSER.hpp
+  hiopLinSolverSparseReSolve.hpp
   hiopLinSolverUMFPACKZ.hpp
   hiopLinSolverCholCuSparse.hpp
   hiopMatrix.hpp
@@ -97,8 +97,8 @@ set(hiopLinAlg_PARDISO_SRC
   hiopLinSolverSparsePARDISO.cpp
 )
 
-set(hiopLinAlg_EVLOSER_SRC
-  hiopLinSolverSparseEVLOSER.cpp
+set(hiopLinAlg_RESOLVE_SRC
+  hiopLinSolverSparseReSolve.cpp
 )
 
 set(hiopLinAlg_CUSOLVER_CHOL_SRC
@@ -148,9 +148,9 @@ if(HIOP_SPARSE)
     if(HIOP_USE_PARDISO)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_PARDISO_SRC})
     endif(HIOP_USE_PARDISO)
-    if(HIOP_USE_EVLOSER)
+    if(HIOP_USE_RESOLVE)
       find_package(ReSolve CONFIG REQUIRED)
-      list(APPEND hiopLinAlg_SRC ${hiopLinAlg_EVLOSER_SRC})
+      list(APPEND hiopLinAlg_SRC ${hiopLinAlg_RESOLVE_SRC})
       target_link_libraries(hiop_tpl INTERFACE ReSolve::ReSolve)
     endif()
     if(HIOP_USE_CUDA)
@@ -190,14 +190,14 @@ if(HIOP_USE_HIP)
     PROPERTIES COMPILE_FLAGS "-x hip"
   )
 
-  if(HIOP_USE_EVLOSER)
+  if(HIOP_USE_RESOLVE)
     set_source_files_properties(
-      ${hiopLinAlg_EVLOSER_SRC}
+      ${hiopLinAlg_RESOLVE_SRC}
       PROPERTIES LANGUAGE CXX
     )
 
     set_source_files_properties(
-      ${hiopLinAlg_EVLOSER_SRC}
+      ${hiopLinAlg_RESOLVE_SRC}
       PROPERTIES COMPILE_FLAGS "-x hip"
     )
   endif()
@@ -224,9 +224,9 @@ if(HIOP_USE_GPU)
       PROPERTIES LANGUAGE CUDA
     )
 
-    if(HIOP_USE_EVLOSER)
+    if(HIOP_USE_RESOLVE)
       set_source_files_properties(
-        ${hiopLinAlg_EVLOSER_SRC}
+        ${hiopLinAlg_RESOLVE_SRC}
         PROPERTIES LANGUAGE CUDA
       )
     endif()

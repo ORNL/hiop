@@ -71,8 +71,8 @@
 #ifdef HIOP_USE_PARDISO
 #include "hiopLinSolverSparsePARDISO.hpp"
 #endif
-#ifdef HIOP_USE_EVLOSER
-#include "hiopLinSolverSparseEVLOSER.hpp"
+#ifdef HIOP_USE_RESOLVE
+#include "hiopLinSolverSparseReSolve.hpp"
 #endif
 #ifdef HIOP_USE_GINKGO
 #include "hiopLinSolverSparseGinkgo.hpp"
@@ -375,20 +375,20 @@ bool hiopDualsLsqUpdateLinsysAugSparse::instantiate_linear_solver(const char* li
       // compute mode CPU
       /////////////////////////////////////////////////////////////////////////////////////////
       assert(nullptr == lin_sys_);
-#ifdef HIOP_USE_EVLOSER
-      if(linear_solver == "evloser") {
+#ifdef HIOP_USE_RESOLVE
+      if(linear_solver == "resolve") {
         if(fact_acceptor == "inertia_correction") {
           nlp_->log->printf(hovError,
-                            "LSQ linear solver with EVLOSER does not support inertia correction. "
+                            "LSQ linear solver with ReSolve does not support inertia correction. "
                             "Please set option 'fact_acceptor' to 'inertia_free'.\n");
           assert(false);
           return false;
         }
 
-        ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: EVLOSER on CPU ";
-        lin_sys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
+        ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: ReSolve on CPU ";
+        lin_sys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
       }
-#endif  // HIOP_USE_EVLOSER
+#endif  // HIOP_USE_RESOLVE
       if(linear_solver == "ma57" || linear_solver == "auto") {
 #ifdef HIOP_USE_COINHSL
         ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: MA57 ";
@@ -440,27 +440,27 @@ bool hiopDualsLsqUpdateLinsysAugSparse::instantiate_linear_solver(const char* li
       // Under gpu compute_mode, which is work in progress, the initialization should be done only using
       // GPU sparse linear solvers.
 
-#ifdef HIOP_USE_EVLOSER
+#ifdef HIOP_USE_RESOLVE
       if(compute_mode == "gpu") {
-        assert((linear_solver == "evloser" || linear_solver == "auto") &&
+        assert((linear_solver == "resolve" || linear_solver == "auto") &&
                "the value for duals_init_linear_solver_sparse is invalid and should have been corrected during "
                "options processing");
       }
       if(fact_acceptor == "inertia_correction") {
         nlp_->log->printf(hovError,
-                          "LSQ linear solver with EVLOSER does not support inertia correction. "
+                          "LSQ linear solver with ReSolve does not support inertia correction. "
                           "Please set option 'fact_acceptor' to 'inertia_free'.\n");
         assert(false);
         return false;
       }
 
-#ifdef HIOP_USE_EVLOSER
-      if(nullptr == lin_sys_ && (linear_solver == "evloser" || linear_solver == "auto")) {
-        ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: EVLOSER ";
-        lin_sys_ = new hiopLinSolverSymSparseEVLOSER(n, nnz, nlp_);
+#ifdef HIOP_USE_RESOLVE
+      if(nullptr == lin_sys_ && (linear_solver == "resolve" || linear_solver == "auto")) {
+        ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: ReSolve ";
+        lin_sys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
       }
 #endif
-#else  // no EVLOSER support
+#else  // no ReSolve support
        // under compute mode gpu, at this point we don't have a sparse linear solver
       if(compute_mode == "gpu") {
         if(linear_solver == "auto") {
