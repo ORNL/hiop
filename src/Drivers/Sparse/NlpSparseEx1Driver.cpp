@@ -15,6 +15,7 @@ static bool parse_arguments(int argc,
                             double& scal,
                             bool& self_check,
                             bool& use_pardiso,
+                            bool& use_evloser,
                             bool& use_ginkgo,
                             bool& use_ginkgo_cuda,
                             bool& use_ginkgo_hip,
@@ -22,9 +23,10 @@ static bool parse_arguments(int argc,
 {
   self_check = false;
   use_pardiso = false;
+  use_evloser = false;
   use_ginkgo = false;
   use_ginkgo_cuda = false;
-  use_ginkgo_cuda = false;
+  use_ginkgo_hip = false;
   force_fr = false;
   n = 3;
   scal = 1.0;
@@ -47,6 +49,8 @@ static bool parse_arguments(int argc,
         self_check = true;
       } else if(std::string(argv[4]) == "-pardiso") {
         use_pardiso = true;
+      } else if(std::string(argv[4]) == "-evloser") {
+        use_evloser = true;
       } else if(std::string(argv[4]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[4]) == "-ginkgo_cuda") {
@@ -65,6 +69,8 @@ static bool parse_arguments(int argc,
         self_check = true;
       } else if(std::string(argv[3]) == "-pardiso") {
         use_pardiso = true;
+      } else if(std::string(argv[3]) == "-evloser") {
+        use_evloser = true;
       } else if(std::string(argv[3]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[3]) == "-ginkgo_cuda") {
@@ -83,6 +89,8 @@ static bool parse_arguments(int argc,
         self_check = true;
       } else if(std::string(argv[2]) == "-pardiso") {
         use_pardiso = true;
+      } else if(std::string(argv[2]) == "-evloser") {
+        use_evloser = true;
       } else if(std::string(argv[2]) == "-ginkgo") {
         use_ginkgo = true;
       } else if(std::string(argv[2]) == "-ginkgo_cuda") {
@@ -109,6 +117,12 @@ static bool parse_arguments(int argc,
     scal = 1.0;
   }
 
+  if(use_evloser && use_pardiso) {
+    printf("Selected both EVLOSER and Pardiso. ");
+    printf("You can select only one linear solver.\n\n");
+    return false;
+  }
+
 // If Pardiso is not available de-select it.
 #ifndef HIOP_USE_PARDISO
   if(use_pardiso) {
@@ -122,6 +136,14 @@ static bool parse_arguments(int argc,
   if(use_ginkgo) {
     printf("HiOp not built with GINKGO support, using default linear solver ...\n");
     use_ginkgo = false;
+  }
+#endif
+
+#ifndef HIOP_USE_EVLOSER
+  if(use_evloser) {
+    printf("HiOp built without EVLOSER support. ");
+    printf("Using default linear solver ...\n");
+    use_evloser = false;
   }
 #endif
   return true;
@@ -138,6 +160,7 @@ static void usage(const char* exeName)
       "  'scal_fact': scaling factor used for objective function and constraints [optional, "
       "default is 1.0]\n");
   printf("  '-pardiso': use Pardiso as the linear solver [optional]\n");
+  printf("  '-evloser': use EVLOSER as the linear solver [optional]\n");
   printf("  '-fr': force to reset feasibility in the 1st iteration [optional]\n");
   printf(
       "  '-selfcheck': compares the optimal objective with a previously saved value for the "
@@ -162,6 +185,7 @@ int main(int argc, char** argv)
 #endif
   bool selfCheck = false;
   bool use_pardiso = false;
+  bool use_evloser = false;
   bool use_ginkgo = false;
   bool use_ginkgo_cuda = false;
   bool use_ginkgo_hip = false;
@@ -175,6 +199,7 @@ int main(int argc, char** argv)
                       scal,
                       selfCheck,
                       use_pardiso,
+                      use_evloser,
                       use_ginkgo,
                       use_ginkgo_cuda,
                       use_ginkgo_hip,
@@ -201,6 +226,24 @@ int main(int argc, char** argv)
 
   if(use_pardiso) {
     nlp.options->SetStringValue("linear_solver_sparse", "pardiso");
+  }
+
+  if(use_evloser) {
+    nlp.options->SetStringValue("duals_init", "zero");
+    nlp.options->SetStringValue("linsol_mode", "speculative");
+    nlp.options->SetStringValue("linear_solver_sparse", "evloser");
+    nlp.options->SetStringValue("fact_acceptor", "inertia_free");
+    nlp.options->SetIntegerValue("ir_outer_maxit", 0);
+
+#ifdef HIOP_USE_GPU
+    nlp.options->SetStringValue("resolve_refactorization", "rf");
+    nlp.options->SetStringValue("compute_mode", "hybrid");
+    nlp.options->SetIntegerValue("ir_inner_maxit", 100);
+    nlp.options->SetNumericValue("ir_inner_tol", 1e-8);
+    nlp.options->SetIntegerValue("ir_inner_restart", 20);
+    nlp.options->SetIntegerValue("ir_inner_conv_cond", 2);
+    nlp.options->SetStringValue("ir_inner_gs_scheme", "cgs2");
+#endif
   }
 
   if(use_ginkgo) {

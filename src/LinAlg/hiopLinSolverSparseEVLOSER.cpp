@@ -193,7 +193,6 @@ __global__ void addToArrayKernel(T* dst, const T* src, const I* mapidx, I n, I n
 hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const int& nnz, hiopNlpFormulation* nlp)
     : hiopLinSolverSymSparse(n, nnz, nlp),
       M_host_(nullptr),
-      use_device_(false),
       n_(n),
       nnz_(0),
       index_convert_CSR2Triplet_host_(nullptr),
@@ -228,8 +227,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   const std::string mem_space = nlp_->options->GetString("mem_space");
 
   if(mem_space == "device") {
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
-    use_device_ = true;
+#ifdef HIOP_USE_GPU
     M_host_ = LinearAlgebraFactory::create_matrix_sparse("default", n, n, nnz);
 #else
     nlp_->log->printf(hovError, "EVLOSER device execution requires a CUDA or HIP build.\n");
@@ -239,6 +237,15 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     nlp_->log->printf(hovError, "Memory space %s is not supported by EVLOSER.\n", mem_space.c_str());
     std::abort();
   }
+
+#ifdef HIOP_USE_GPU
+  const std::string compute_mode = nlp_->options->GetString("compute_mode");
+
+  if(mem_space == "device" && compute_mode == "cpu") {
+    nlp_->log->printf(hovError, "EVLOSER CPU execution does not support device-resident input.\n");
+    std::abort();
+  }
+#endif
 
   const std::string ordering = nlp_->options->GetString("linear_solver_sparse_ordering");
 
@@ -253,7 +260,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
                       ordering.c_str());
   }
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+#ifdef HIOP_USE_GPU
   const std::string refactorization = nlp_->options->GetString("resolve_refactorization");
 #endif
 
@@ -261,8 +268,12 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   factorization_solver_->setOrdering(ordering_method);
   factorization_solver_->setHaltIfSingular(true);
 
+#ifdef HIOP_USE_GPU
+  // In auto mode, device-resident input selects device execution.
+  // Explicit compute_mode values are not overridden.
+  if(compute_mode == "hybrid" || compute_mode == "gpu" ||
+     (compute_mode == "auto" && mem_space == "device")) {
 #ifdef HIOP_USE_CUDA
-  if(use_device_) {
     cuda_workspace_ = new ReSolve::LinAlgWorkspaceCUDA();
     cuda_workspace_->initializeHandles();
 
@@ -275,11 +286,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
 
       cuda_glu_solver_ = new ReSolve::LinSolverDirectCuSolverGLU(cuda_workspace_);
     }
-  }
-#endif
-
-#ifdef HIOP_USE_HIP
-  if(use_device_) {
+#elif defined(HIOP_USE_HIP)
     if(refactorization == "glu") {
       nlp_->log->printf(hovWarning, "GLU is unavailable with HIP; using rocSolverRf.\n");
     }
@@ -290,13 +297,15 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     hip_workspace_->initializeHandles();
 
     hip_rf_solver_ = new ReSolve::LinSolverDirectRocSolverRf(hip_workspace_);
+#endif
   }
 #endif
 
   rhs_ = new ReSolve::vector::Vector(n_);
   solution_ = new ReSolve::vector::Vector(n_);
 
-  const auto vector_memory = use_device_ ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
+  const auto vector_memory = refactorization_mode_ != RefactorizationMode::CPU_KLU ? ReSolve::memory::DEVICE
+                                                                                   : ReSolve::memory::HOST;
 
   const int rhs_status = rhs_->allocate(vector_memory);
 
@@ -307,7 +316,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     std::abort();
   }
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+#ifdef HIOP_USE_GPU
   const int ir_maxit = nlp_->options->GetInteger("ir_inner_maxit");
 
   const int ir_restart = nlp_->options->GetInteger("ir_inner_restart");
@@ -321,7 +330,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   // ReSolve's public iterative interface exposes each algorithm
   // component. Assemble the handlers, Gram-Schmidt implementation, FGMRES
   // solver, and LU preconditioner explicitly when refinement is requested.
-  if(use_device_ && ir_maxit > 0) {
+  if(refactorization_mode_ != RefactorizationMode::CPU_KLU && ir_maxit > 0) {
 #ifdef HIOP_USE_CUDA
     if(refactorization_mode_ == RefactorizationMode::CUDA_RF) {
       ir_matrix_handler_ = new ReSolve::MatrixHandler(cuda_workspace_);
@@ -621,9 +630,15 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
 
   nlp_->runStats.linsolv.tmTriuSolves.start();
 
-  const auto vector_memory = use_device_ ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
+  const std::string mem_space = nlp_->options->GetString("mem_space");
 
-  if(rhs_->copyFromExternal(x_data, vector_memory, vector_memory) != 0) {
+  // HiOp vector memory depends on mem_space; ReSolve vector memory depends on the selected backend.
+  const auto external_memory = mem_space == "device" ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
+
+  const auto internal_memory = refactorization_mode_ != RefactorizationMode::CPU_KLU ? ReSolve::memory::DEVICE
+                                                                                     : ReSolve::memory::HOST;
+
+  if(rhs_->copyFromExternal(x_data, external_memory, internal_memory) != 0) {
     nlp_->log->printf(hovError, "Failed to copy the right-hand side into ReSolve.\n");
 
     nlp_->runStats.linsolv.tmTriuSolves.stop();
@@ -657,7 +672,7 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
                       ir_solver_->getFinalResidualNorm());
   }
 
-  if(solution_->copyToExternal(x_data, vector_memory, vector_memory) != 0) {
+  if(solution_->copyToExternal(x_data, internal_memory, external_memory) != 0) {
     nlp_->log->printf(hovError, "Failed to copy the ReSolve solution into HiOp.\n");
 
     nlp_->runStats.linsolv.tmTriuSolves.stop();
@@ -676,8 +691,10 @@ int hiopLinSolverSymSparseEVLOSER::firstCall()
   assert(n_ > 0);
   assert(factorization_solver_ != nullptr);
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
-  if(use_device_) {
+#ifdef HIOP_USE_GPU
+  const std::string mem_space = nlp_->options->GetString("mem_space");
+
+  if(mem_space == "device") {
     assert(M_host_ != nullptr);
 
     if(!copy_device_to_host(nlp_,
@@ -784,8 +801,8 @@ int hiopLinSolverSymSparseEVLOSER::firstCall()
     return -1;
   }
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
-  if(use_device_) {
+#ifdef HIOP_USE_GPU
+  if(refactorization_mode_ != RefactorizationMode::CPU_KLU) {
     if(matrix_->allocateMatrixData(ReSolve::memory::DEVICE) != 0) {
       nlp_->log->printf(hovError, "Failed to allocate ReSolve matrix device storage.\n");
       return -1;
@@ -817,8 +834,10 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
   assert(M_ != nullptr);
   assert(matrix_ != nullptr);
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
-  if(use_device_) {
+#ifdef HIOP_USE_GPU
+  const std::string mem_space = nlp_->options->GetString("mem_space");
+
+  if(mem_space == "device") {
     double* values = matrix_->getValues(ReSolve::memory::DEVICE);
 
     const double* source_values = M_->M();
@@ -902,7 +921,7 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 
     return 0;
   }
-#endif  // defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+#endif  // HIOP_USE_GPU
 
   // Update values on the host when device execution is unavailable
   // or not selected at runtime.
@@ -928,10 +947,23 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
     return -1;
   }
 
+#ifdef HIOP_USE_GPU
+  if(refactorization_mode_ != RefactorizationMode::CPU_KLU) {
+    // Accelerator refactorization consumes device values.
+    if(matrix_->syncData(ReSolve::memory::DEVICE) != 0) {
+      nlp_->log->printf(hovError, "Failed to synchronize EVLOSER matrix values to the device.\n");
+      return -1;
+    }
+  }
+#endif
+
   return 0;
 }
 
-hiopMatrixSparse* hiopLinSolverSymSparseEVLOSER::host_matrix() const { return use_device_ ? M_host_ : M_; }
+hiopMatrixSparse* hiopLinSolverSymSparseEVLOSER::host_matrix() const
+{
+  return nlp_->options->GetString("mem_space") == "device" ? M_host_ : M_;
+}
 
 void hiopLinSolverSymSparseEVLOSER::compute_nnz()
 {
@@ -1076,8 +1108,12 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
   assert(total_nnz_tmp == nnz_);
   (void)total_nnz_tmp;
 
+#ifdef HIOP_USE_GPU
+  const std::string mem_space = nlp_->options->GetString("mem_space");
+#endif
+
 #ifdef HIOP_USE_CUDA
-  if(use_device_) {
+  if(mem_space == "device") {
     cudaError_t status = cudaMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), sizeof(int) * nnz_);
 
     if(status != cudaSuccess) {
@@ -1136,7 +1172,7 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
 #endif
 
 #ifdef HIOP_USE_HIP
-  if(use_device_) {
+  if(mem_space == "device") {
     hipError_t status = hipMalloc(reinterpret_cast<void**>(&index_convert_CSR2Triplet_device_), sizeof(int) * static_cast<size_t>(nnz_));
 
     if(status != hipSuccess) {
@@ -1204,7 +1240,7 @@ int hiopLinSolverSymSparseEVLOSER::setup_refactorization_solver()
     return 0;
   }
 
-#if defined(HIOP_USE_CUDA) || defined(HIOP_USE_HIP)
+#ifdef HIOP_USE_GPU
   auto* L = dynamic_cast<ReSolve::matrix::Csr*>(factorization_solver_->getLFactor());
 
   auto* U = dynamic_cast<ReSolve::matrix::Csr*>(factorization_solver_->getUFactor());
