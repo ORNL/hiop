@@ -992,6 +992,9 @@ int hiopLinSolverSymSparseReSolve::set_csr_indices_values()
   hiopMatrixSparse* source = host_matrix();
   assert(source != nullptr);
 
+  // HiOp stores the structural sparse entries first, followed by n additional
+  // diagonal entries. ReSolve maps the trailing diagonal entries separately
+  // so their values can be updated independently.
   ReSolve::index_type* row_ptr = matrix_->getRowData(ReSolve::memory::HOST);
 
   ReSolve::index_type* col_idx = matrix_->getColData(ReSolve::memory::HOST);
