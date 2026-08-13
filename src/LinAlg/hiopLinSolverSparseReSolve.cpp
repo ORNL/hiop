@@ -140,7 +140,7 @@ bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void*
 }
 #endif
 
-#if defined(HIOP_USE_GPU)
+#ifdef HIOP_USE_GPU
 
 /**
  * @brief Gather source values into a destination ordering.
@@ -736,7 +736,7 @@ int hiopLinSolverSymSparseReSolve::firstCall()
   delete[] index_convert_extra_Diag2CSR_host_;
   index_convert_extra_Diag2CSR_host_ = nullptr;
 
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
   if(index_convert_CSR2Triplet_device_ != nullptr) {
     const cudaError_t status = cudaFree(index_convert_CSR2Triplet_device_);
 
@@ -758,7 +758,8 @@ int hiopLinSolverSymSparseReSolve::firstCall()
 
     index_convert_extra_Diag2CSR_device_ = nullptr;
   }
-#elif defined(HIOP_USE_HIP)
+#endif
+#ifdef HIOP_USE_HIP
   if(index_convert_CSR2Triplet_device_ != nullptr) {
     const hipError_t status = hipFree(index_convert_CSR2Triplet_device_);
 
@@ -858,22 +859,23 @@ int hiopLinSolverSymSparseReSolve::update_matrix_values()
           index_convert_CSR2Triplet_device_,
           nnz_);
 
-#if defined(HIOP_USE_CUDA)
-    cudaError_t launch_status = cudaGetLastError();
+#ifdef HIOP_USE_CUDA
+    cudaError_t cuda_launch_status = cudaGetLastError();
 
-    if(launch_status != cudaSuccess) {
+    if(cuda_launch_status != cudaSuccess) {
       nlp_->log->printf(hovError,
                         "CUDA failure launching the CSR value-mapping kernel: %s\n",
-                        cudaGetErrorString(launch_status));
+                        cudaGetErrorString(cuda_launch_status));
       return -1;
     }
-#elif defined(HIOP_USE_HIP)
-    hipError_t launch_status = hipGetLastError();
+#endif
+#ifdef HIOP_USE_HIP
+    hipError_t hip_launch_status = hipGetLastError();
 
-    if(launch_status != hipSuccess) {
+    if(hip_launch_status != hipSuccess) {
       nlp_->log->printf(hovError,
                         "HIP failure launching the CSR value-mapping kernel: %s\n",
-                        hipGetErrorString(launch_status));
+                        hipGetErrorString(hip_launch_status));
       return -1;
     }
 #endif
@@ -884,22 +886,23 @@ int hiopLinSolverSymSparseReSolve::update_matrix_values()
         <<<gridsize, blocksize>>>(
             values, source_values, index_convert_extra_Diag2CSR_device_, n_, M_->numberOfNonzeros());
 
-#if defined(HIOP_USE_CUDA)
-    launch_status = cudaGetLastError();
+#ifdef HIOP_USE_CUDA
+    cuda_launch_status = cudaGetLastError();
 
-    if(launch_status != cudaSuccess) {
+    if(cuda_launch_status != cudaSuccess) {
       nlp_->log->printf(hovError,
                         "CUDA failure launching the diagonal-update kernel: %s\n",
-                        cudaGetErrorString(launch_status));
+                        cudaGetErrorString(cuda_launch_status));
       return -1;
     }
-#elif defined(HIOP_USE_HIP)
-    launch_status = hipGetLastError();
+#endif
+#ifdef HIOP_USE_HIP
+    hip_launch_status = hipGetLastError();
 
-    if(launch_status != hipSuccess) {
+    if(hip_launch_status != hipSuccess) {
       nlp_->log->printf(hovError,
                         "HIP failure launching the diagonal-update kernel: %s\n",
-                        hipGetErrorString(launch_status));
+                        hipGetErrorString(hip_launch_status));
       return -1;
     }
 #endif
@@ -1261,7 +1264,7 @@ int hiopLinSolverSymSparseReSolve::setup_refactorization_solver()
     case RefactorizationMode::CPU_KLU:
       return 0;
 
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
     case RefactorizationMode::CUDA_GLU:
       assert(cuda_glu_solver_ != nullptr);
 
@@ -1271,7 +1274,8 @@ int hiopLinSolverSymSparseReSolve::setup_refactorization_solver()
       assert(cuda_rf_solver_ != nullptr);
 
       return cuda_rf_solver_->setup(matrix_, L, U, P, Q, rhs_);
-#elif defined(HIOP_USE_HIP)
+#endif
+#ifdef HIOP_USE_HIP
     case RefactorizationMode::HIP_RF:
       assert(hip_rf_solver_ != nullptr);
 
@@ -1289,7 +1293,7 @@ int hiopLinSolverSymSparseReSolve::refactorize_selected_solver()
       assert(factorization_solver_ != nullptr);
       return factorization_solver_->refactorize();
 
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
     case RefactorizationMode::CUDA_GLU:
       assert(cuda_glu_solver_ != nullptr);
       return cuda_glu_solver_->refactorize();
@@ -1297,7 +1301,8 @@ int hiopLinSolverSymSparseReSolve::refactorize_selected_solver()
     case RefactorizationMode::CUDA_RF:
       assert(cuda_rf_solver_ != nullptr);
       return cuda_rf_solver_->refactorize();
-#elif defined(HIOP_USE_HIP)
+#endif
+#ifdef HIOP_USE_HIP
     case RefactorizationMode::HIP_RF:
       assert(hip_rf_solver_ != nullptr);
       return hip_rf_solver_->refactorize();
@@ -1314,7 +1319,7 @@ int hiopLinSolverSymSparseReSolve::solve_selected_solver()
       assert(factorization_solver_ != nullptr);
       return factorization_solver_->solve(rhs_, solution_);
 
-#if defined(HIOP_USE_CUDA)
+#ifdef HIOP_USE_CUDA
     case RefactorizationMode::CUDA_GLU:
       assert(cuda_glu_solver_ != nullptr);
       return cuda_glu_solver_->solve(rhs_, solution_);
@@ -1322,7 +1327,8 @@ int hiopLinSolverSymSparseReSolve::solve_selected_solver()
     case RefactorizationMode::CUDA_RF:
       assert(cuda_rf_solver_ != nullptr);
       return cuda_rf_solver_->solve(rhs_, solution_);
-#elif defined(HIOP_USE_HIP)
+#endif
+#ifdef HIOP_USE_HIP
     case RefactorizationMode::HIP_RF:
       assert(hip_rf_solver_ != nullptr);
       return hip_rf_solver_->solve(rhs_, solution_);
