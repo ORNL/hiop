@@ -18,7 +18,7 @@ add_executable(NlpSparseEx4.exe NlpSparseEx4.cpp NlpSparseEx4Driver.cpp)
 target_link_libraries(NlpSparseEx4.exe HiOp::HiOp)
 
 if(HIOP_USE_RAJA)
-  if(HIOP_USE_GPU AND (HIOP_USE_CUDA OR HIOP_USE_HIP) AND HIOP_USE_RESOLVE)
+  if(HIOP_USE_GPU AND HIOP_USE_RESOLVE)
     if(HIOP_USE_CUDA)
       set_source_files_properties(
         NlpSparseRajaEx2.cpp
