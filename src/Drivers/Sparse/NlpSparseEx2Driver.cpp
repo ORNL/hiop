@@ -348,6 +348,9 @@ int main(int argc, char** argv)
     if(use_hykkt) {
       nlp.options->SetStringValue("linear_solver_sparse", "hykkt");
       nlp.options->SetIntegerValue("ir_outer_maxit", 0);
+#ifdef HIOP_USE_GPU
+      nlp.options->SetStringValue("compute_mode", "hybrid");
+#endif
     } else if(use_resolve) {
       nlp.options->SetStringValue("linsol_mode", "speculative");
       nlp.options->SetStringValue("linear_solver_sparse", "resolve");
