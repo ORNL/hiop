@@ -484,7 +484,11 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
     return false;
   }
 #ifdef HIOP_USE_GPU
-  if(nlp_->options->GetString("mem_space") == "device") {
+  const std::string mem_space = nlp_->options->GetString("mem_space");
+  const std::string compute_mode = nlp_->options->GetString("compute_mode");
+  const bool use_device_solver = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device");
+
+  if(use_device_solver) {
     if(H_->allocateMatrixData(ReSolve::memory::DEVICE) != 0 ||
        D_s_->allocateMatrixData(ReSolve::memory::DEVICE) != 0 ||
        J_->allocateMatrixData(ReSolve::memory::DEVICE) != 0 ||
@@ -500,7 +504,9 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
       nlp_->log->printf(hovError, "Failed to copy ReSolve HyKKT matrix structure to the device.\n");
       return false;
     }
+  }
 
+  if(mem_space == "device") {
     if(!copy_mapping_to_device(H_csr_to_triplet_device_,
                                H_csr_to_triplet_host_,
                                static_cast<size_t>(H_->getNnz())) ||
@@ -542,19 +548,18 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_vector_blocks()
   y_ = new ReSolve::vector::Vector(neq);
   y_d_ = new ReSolve::vector::Vector(nineq);
 
-  const auto memspace =
-      nlp_->options->GetString("mem_space") == "device"
-          ? ReSolve::memory::DEVICE
-          : ReSolve::memory::HOST;
+  const std::string mem_space = nlp_->options->GetString("mem_space");
+  const std::string compute_mode = nlp_->options->GetString("compute_mode");
+  const auto internal_memory = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device") ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
 
-  if(r_x_->allocate(memspace) != 0 ||
-     r_s_->allocate(memspace) != 0 ||
-     r_y_->allocate(memspace) != 0 ||
-     r_yd_->allocate(memspace) != 0 ||
-     x_->allocateAll(memspace) != 0 ||
-     s_->allocateAll(memspace) != 0 ||
-     y_->allocateAll(memspace) != 0 ||
-     y_d_->allocateAll(memspace) != 0) {
+  if(r_x_->allocate(internal_memory) != 0 ||
+     r_s_->allocate(internal_memory) != 0 ||
+     r_y_->allocate(internal_memory) != 0 ||
+     r_yd_->allocate(internal_memory) != 0 ||
+     x_->allocateAll(internal_memory) != 0 ||
+     s_->allocateAll(internal_memory) != 0 ||
+     y_->allocateAll(internal_memory) != 0 ||
+     y_d_->allocateAll(internal_memory) != 0) {
     nlp_->log->printf(hovError, "Failed to allocate ReSolve HyKKT vector blocks.\n");
     return false;
   }
@@ -580,12 +585,10 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_solver()
   assert(y_d_);
 
   const std::string mem_space = nlp_->options->GetString("mem_space");
-  const auto memspace =
-      mem_space == "device"
-          ? ReSolve::memory::DEVICE
-          : ReSolve::memory::HOST;
+  const std::string compute_mode = nlp_->options->GetString("compute_mode");
+  const auto internal_memory = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device") ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
 
-  if(memspace == ReSolve::memory::DEVICE) {
+  if(internal_memory == ReSolve::memory::DEVICE) {
 #ifdef HIOP_USE_CUDA
     cuda_workspace_ = new ReSolve::LinAlgWorkspaceCUDA();
     cuda_workspace_->initializeHandles();
@@ -614,7 +617,7 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_solver()
       new ReSolve::hykkt::HyKKTSolver(H_->getNumRows(),
                                       J_d_->getNumRows(),
                                       J_->getNumRows(),
-                                      memspace);
+                                      internal_memory);
 
   if(hykkt_solver_->setMatrixBlocks(H_, D_s_, J_, J_d_) != 0) {
     nlp_->log->printf(hovError, "Failed to set ReSolve HyKKT matrix blocks.\n");
@@ -641,7 +644,11 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
   assert(Hx_);
   assert(Hd_);
 
+#ifdef HIOP_USE_GPU
   const std::string mem_space = nlp_->options->GetString("mem_space");
+  const std::string compute_mode = nlp_->options->GetString("compute_mode");
+  const bool use_device_solver = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device");
+#endif
 
   const ReSolve::index_type H_nnz = H_->getNnz();
   const ReSolve::index_type D_s_nnz = D_s_->getNnz();
@@ -809,11 +816,33 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
     return false;
   }
 
+#ifdef HIOP_USE_GPU
+  if(use_device_solver) {
+    if(H_->syncData(ReSolve::memory::DEVICE) != 0 ||
+       D_s_->syncData(ReSolve::memory::DEVICE) != 0 ||
+       J_->syncData(ReSolve::memory::DEVICE) != 0 ||
+       J_d_->syncData(ReSolve::memory::DEVICE) != 0) {
+      nlp_->log->printf(hovError, "Failed to copy ReSolve HyKKT matrix blocks to the device.\n");
+      return false;
+    }
+  }
+#endif
+
   return true;
 }
 
 bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::build_kkt_matrix(const hiopPDPerturbation& pdreg)
 {
+#ifdef HIOP_USE_GPU
+  const std::string mem_space = nlp_->options->GetString("mem_space");
+  const std::string compute_mode = nlp_->options->GetString("compute_mode");
+
+  if(mem_space == "device" && compute_mode == "cpu") {
+    nlp_->log->printf(hovError, "ReSolve HyKKT CPU execution does not support device-resident input.\n");
+    return false;
+  }
+#endif
+
   delta_wx_ = perturb_calc_->get_curr_delta_wx();
   delta_wd_ = perturb_calc_->get_curr_delta_wd();
   delta_cc_ = perturb_calc_->get_curr_delta_cc();
@@ -896,18 +925,18 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
     return false;
   }
 
-  const auto memspace =
-      nlp_->options->GetString("mem_space") == "device"
-          ? ReSolve::memory::DEVICE
-          : ReSolve::memory::HOST;
+  const std::string mem_space = nlp_->options->GetString("mem_space");
+  const std::string compute_mode = nlp_->options->GetString("compute_mode");
+  const auto external_memory = mem_space == "device" ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
+  const auto internal_memory = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device") ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
 
   nlp_->runStats.kkt.tmSolveRhsManip.start();
 
   const bool rhs_ok =
-      r_x_->copyFromExternal(rx.local_data_const(), memspace, memspace) == 0 &&
-      r_s_->copyFromExternal(rd.local_data_const(), memspace, memspace) == 0 &&
-      r_y_->copyFromExternal(ryc.local_data_const(), memspace, memspace) == 0 &&
-      r_yd_->copyFromExternal(ryd.local_data_const(), memspace, memspace) == 0;
+      r_x_->copyFromExternal(rx.local_data_const(), external_memory, internal_memory) == 0 &&
+      r_s_->copyFromExternal(rd.local_data_const(), external_memory, internal_memory) == 0 &&
+      r_y_->copyFromExternal(ryc.local_data_const(), external_memory, internal_memory) == 0 &&
+      r_yd_->copyFromExternal(ryd.local_data_const(), external_memory, internal_memory) == 0;
 
   nlp_->runStats.kkt.tmSolveRhsManip.stop();
 
@@ -931,10 +960,10 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
   nlp_->runStats.kkt.tmSolveRhsManip.start();
 
   const bool solution_ok =
-      x_->copyToExternal(dx.local_data(), memspace, memspace) == 0 &&
-      s_->copyToExternal(dd.local_data(), memspace, memspace) == 0 &&
-      y_->copyToExternal(dyc.local_data(), memspace, memspace) == 0 &&
-      y_d_->copyToExternal(dyd.local_data(), memspace, memspace) == 0;
+      x_->copyToExternal(dx.local_data(), internal_memory, external_memory) == 0 &&
+      s_->copyToExternal(dd.local_data(), internal_memory, external_memory) == 0 &&
+      y_->copyToExternal(dyc.local_data(), internal_memory, external_memory) == 0 &&
+      y_d_->copyToExternal(dyd.local_data(), internal_memory, external_memory) == 0;
 
   nlp_->runStats.kkt.tmSolveRhsManip.stop();
 
