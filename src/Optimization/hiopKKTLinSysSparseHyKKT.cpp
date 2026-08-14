@@ -725,32 +725,32 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
     }
 
 #ifdef HIOP_USE_CUDA
-    if(cudaGetLastError() != cudaSuccess) {
-      nlp_->log->printf(hovError, "Failed to update ReSolve HyKKT matrix blocks on CUDA.\n");
+    const cudaError_t cuda_launch_status = cudaGetLastError();
+    if(cuda_launch_status != cudaSuccess) {
+      nlp_->log->printf(hovError, "CUDA failure launching ReSolve HyKKT matrix update kernels: %s\n", cudaGetErrorString(cuda_launch_status));
       return false;
     }
 
-    if(D_s_nnz > 0 &&
-       cudaMemcpy(D_s_values,
-                  Hd_values,
-                  static_cast<size_t>(D_s_nnz) * sizeof(double),
-                  cudaMemcpyDeviceToDevice) != cudaSuccess) {
-      nlp_->log->printf(hovError, "Failed to update ReSolve HyKKT matrix blocks on CUDA.\n");
-      return false;
+    if(D_s_nnz > 0) {
+      const cudaError_t cuda_copy_status = cudaMemcpy(D_s_values, Hd_values, static_cast<size_t>(D_s_nnz) * sizeof(double), cudaMemcpyDeviceToDevice);
+      if(cuda_copy_status != cudaSuccess) {
+        nlp_->log->printf(hovError, "CUDA failure copying ReSolve HyKKT slack diagonal values: %s\n", cudaGetErrorString(cuda_copy_status));
+        return false;
+      }
     }
 #elif defined(HIOP_USE_HIP)
-    if(hipGetLastError() != hipSuccess) {
-      nlp_->log->printf(hovError, "Failed to update ReSolve HyKKT matrix blocks on HIP.\n");
+    const hipError_t hip_launch_status = hipGetLastError();
+    if(hip_launch_status != hipSuccess) {
+      nlp_->log->printf(hovError, "HIP failure launching ReSolve HyKKT matrix update kernels: %s\n", hipGetErrorString(hip_launch_status));
       return false;
     }
 
-    if(D_s_nnz > 0 &&
-       hipMemcpy(D_s_values,
-                 Hd_values,
-                 static_cast<size_t>(D_s_nnz) * sizeof(double),
-                 hipMemcpyDeviceToDevice) != hipSuccess) {
-      nlp_->log->printf(hovError, "Failed to update ReSolve HyKKT matrix blocks on HIP.\n");
-      return false;
+    if(D_s_nnz > 0) {
+      const hipError_t hip_copy_status = hipMemcpy(D_s_values, Hd_values, static_cast<size_t>(D_s_nnz) * sizeof(double), hipMemcpyDeviceToDevice);
+      if(hip_copy_status != hipSuccess) {
+        nlp_->log->printf(hovError, "HIP failure copying ReSolve HyKKT slack diagonal values: %s\n", hipGetErrorString(hip_copy_status));
+        return false;
+      }
     }
 #endif
 
