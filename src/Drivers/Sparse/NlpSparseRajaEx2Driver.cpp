@@ -197,8 +197,7 @@ static bool parse_arguments(int argc,
 #endif
 
   // Sparse LU solvers require the inertia-free approach.
-  if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_resolve_hip || use_hykkt) &&
-     !(inertia_free)) {
+  if((use_resolve_cuda_glu || use_resolve_cuda_rf || use_resolve_hip || use_hykkt) && !(inertia_free)) {
     inertia_free = true;
     printf("Selected sparse solver requires the inertia-free approach. ");
     printf("Enabling now ...\n");

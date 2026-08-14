@@ -1012,11 +1012,7 @@ void hiopOptionsNLP::register_options()
   }
 
   // HyKKT options
-  register_num_option("hykkt_gamma",
-                      1e4,
-                      1e-16,
-                      1e16,
-                      "HyKKT penalty parameter gamma (default is 1e4). ");
+  register_num_option("hykkt_gamma", 1e4, 1e-16, 1e16, "HyKKT penalty parameter gamma (default is 1e4). ");
 
   register_num_option("hykkt_residual_tol",
                       1e-2,
@@ -1616,8 +1612,7 @@ void hiopOptionsNLP::ensure_consistence()
       }
       set_val("fact_acceptor", "inertia_free");
     }
-  } else if(GetString("linear_solver_sparse") == "strumpack" ||
-            GetString("linear_solver_sparse") == "resolve" ||
+  } else if(GetString("linear_solver_sparse") == "strumpack" || GetString("linear_solver_sparse") == "resolve" ||
             GetString("linear_solver_sparse") == "hykkt") {
     if(GetString("fact_acceptor") == "inertia_correction") {
       if(is_user_defined("fact_acceptor") && is_user_defined("linear_solver_sparse")) {

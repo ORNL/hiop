@@ -168,8 +168,7 @@ bool build_csr_structure(int nrows,
 
   std::partial_sum(row_ptr.begin(), row_ptr.end(), row_ptr.begin());
 
-  matrix = new ReSolve::matrix::Csr(
-      nrows, ncols, static_cast<ReSolve::index_type>(entries.size()), symmetric, true);
+  matrix = new ReSolve::matrix::Csr(nrows, ncols, static_cast<ReSolve::index_type>(entries.size()), symmetric, true);
 
   if(matrix->allocateMatrixData(ReSolve::memory::HOST) != 0) {
     return false;
@@ -297,16 +296,9 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
   const size_t H_nnz = static_cast<size_t>(HessSp_->numberOfNonzeros());
 
 #ifdef HIOP_USE_RAJA
-  int* H_rows = H_nnz > 0
-                    ? static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int)))
-                    : nullptr;
-  int* H_cols = H_nnz > 0
-                    ? static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int)))
-                    : nullptr;
-  double* H_vals =
-      H_nnz > 0
-          ? static_cast<double*>(host_alloc.allocate(H_nnz * sizeof(double)))
-          : nullptr;
+  int* H_rows = H_nnz > 0 ? static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int))) : nullptr;
+  int* H_cols = H_nnz > 0 ? static_cast<int*>(host_alloc.allocate(H_nnz * sizeof(int))) : nullptr;
+  double* H_vals = H_nnz > 0 ? static_cast<double*>(host_alloc.allocate(H_nnz * sizeof(double))) : nullptr;
 #else
   std::vector<int> H_rows_storage(H_nnz);
   std::vector<int> H_cols_storage(H_nnz);
@@ -352,16 +344,9 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
   const size_t J_nnz = static_cast<size_t>(Jac_cSp_->numberOfNonzeros());
 
 #ifdef HIOP_USE_RAJA
-  int* J_rows = J_nnz > 0
-                    ? static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int)))
-                    : nullptr;
-  int* J_cols = J_nnz > 0
-                    ? static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int)))
-                    : nullptr;
-  double* J_vals =
-      J_nnz > 0
-          ? static_cast<double*>(host_alloc.allocate(J_nnz * sizeof(double)))
-          : nullptr;
+  int* J_rows = J_nnz > 0 ? static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int))) : nullptr;
+  int* J_cols = J_nnz > 0 ? static_cast<int*>(host_alloc.allocate(J_nnz * sizeof(int))) : nullptr;
+  double* J_vals = J_nnz > 0 ? static_cast<double*>(host_alloc.allocate(J_nnz * sizeof(double))) : nullptr;
 #else
   std::vector<int> J_rows_storage(J_nnz);
   std::vector<int> J_cols_storage(J_nnz);
@@ -409,18 +394,9 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
   const size_t J_d_nnz = static_cast<size_t>(Jac_dSp_->numberOfNonzeros());
 
 #ifdef HIOP_USE_RAJA
-  int* J_d_rows =
-      J_d_nnz > 0
-          ? static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int)))
-          : nullptr;
-  int* J_d_cols =
-      J_d_nnz > 0
-          ? static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int)))
-          : nullptr;
-  double* J_d_vals =
-      J_d_nnz > 0
-          ? static_cast<double*>(host_alloc.allocate(J_d_nnz * sizeof(double)))
-          : nullptr;
+  int* J_d_rows = J_d_nnz > 0 ? static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int))) : nullptr;
+  int* J_d_cols = J_d_nnz > 0 ? static_cast<int*>(host_alloc.allocate(J_d_nnz * sizeof(int))) : nullptr;
+  double* J_d_vals = J_d_nnz > 0 ? static_cast<double*>(host_alloc.allocate(J_d_nnz * sizeof(double))) : nullptr;
 #else
   std::vector<int> J_d_rows_storage(J_d_nnz);
   std::vector<int> J_d_cols_storage(J_d_nnz);
@@ -432,9 +408,7 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
 #endif
 
   if(J_d_nnz > 0) {
-    const_cast<hiopMatrixSparse*>(Jac_dSp_)->copy_to(J_d_rows,
-                                                     J_d_cols,
-                                                     J_d_vals);
+    const_cast<hiopMatrixSparse*>(Jac_dSp_)->copy_to(J_d_rows, J_d_cols, J_d_vals);
   }
 
   const bool J_d_ok = build_csr_structure(nineq,
@@ -474,51 +448,39 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_matrix_blocks()
 
   D_s_ = new ReSolve::matrix::Csr(nineq, nineq, nineq, false, true);
 
-  if(D_s_->allocateMatrixData(ReSolve::memory::HOST) != 0 ||
-     D_s_->copyFromExternal(D_s_rows.data(),
-                            D_s_cols.data(),
-                            D_s_vals.data(),
-                            ReSolve::memory::HOST,
-                            ReSolve::memory::HOST) != 0) {
+  if(D_s_->allocateMatrixData(ReSolve::memory::HOST) != 0 || D_s_->copyFromExternal(D_s_rows.data(),
+                                                                                    D_s_cols.data(),
+                                                                                    D_s_vals.data(),
+                                                                                    ReSolve::memory::HOST,
+                                                                                    ReSolve::memory::HOST) != 0) {
     nlp_->log->printf(hovError, "Failed to construct the ReSolve HyKKT slack diagonal block.\n");
     return false;
   }
 #ifdef HIOP_USE_GPU
   const std::string mem_space = nlp_->options->GetString("mem_space");
   const std::string compute_mode = nlp_->options->GetString("compute_mode");
-  const bool use_device_solver = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device");
+  const bool use_device_solver =
+      compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device");
 
   if(use_device_solver) {
-    if(H_->allocateMatrixData(ReSolve::memory::DEVICE) != 0 ||
-       D_s_->allocateMatrixData(ReSolve::memory::DEVICE) != 0 ||
-       J_->allocateMatrixData(ReSolve::memory::DEVICE) != 0 ||
-       J_d_->allocateMatrixData(ReSolve::memory::DEVICE) != 0) {
+    if(H_->allocateMatrixData(ReSolve::memory::DEVICE) != 0 || D_s_->allocateMatrixData(ReSolve::memory::DEVICE) != 0 ||
+       J_->allocateMatrixData(ReSolve::memory::DEVICE) != 0 || J_d_->allocateMatrixData(ReSolve::memory::DEVICE) != 0) {
       nlp_->log->printf(hovError, "Failed to allocate ReSolve HyKKT device matrix storage.\n");
       return false;
     }
 
-    if(H_->syncData(ReSolve::memory::DEVICE) != 0 ||
-       D_s_->syncData(ReSolve::memory::DEVICE) != 0 ||
-       J_->syncData(ReSolve::memory::DEVICE) != 0 ||
-       J_d_->syncData(ReSolve::memory::DEVICE) != 0) {
+    if(H_->syncData(ReSolve::memory::DEVICE) != 0 || D_s_->syncData(ReSolve::memory::DEVICE) != 0 ||
+       J_->syncData(ReSolve::memory::DEVICE) != 0 || J_d_->syncData(ReSolve::memory::DEVICE) != 0) {
       nlp_->log->printf(hovError, "Failed to copy ReSolve HyKKT matrix structure to the device.\n");
       return false;
     }
   }
 
   if(mem_space == "device") {
-    if(!copy_mapping_to_device(H_csr_to_triplet_device_,
-                               H_csr_to_triplet_host_,
-                               static_cast<size_t>(H_->getNnz())) ||
-       !copy_mapping_to_device(H_diag_to_csr_device_,
-                               H_diag_to_csr_host_,
-                               static_cast<size_t>(nx)) ||
-       !copy_mapping_to_device(J_csr_to_triplet_device_,
-                               J_csr_to_triplet_host_,
-                               static_cast<size_t>(J_->getNnz())) ||
-       !copy_mapping_to_device(J_d_csr_to_triplet_device_,
-                               J_d_csr_to_triplet_host_,
-                               static_cast<size_t>(J_d_->getNnz()))) {
+    if(!copy_mapping_to_device(H_csr_to_triplet_device_, H_csr_to_triplet_host_, static_cast<size_t>(H_->getNnz())) ||
+       !copy_mapping_to_device(H_diag_to_csr_device_, H_diag_to_csr_host_, static_cast<size_t>(nx)) ||
+       !copy_mapping_to_device(J_csr_to_triplet_device_, J_csr_to_triplet_host_, static_cast<size_t>(J_->getNnz())) ||
+       !copy_mapping_to_device(J_d_csr_to_triplet_device_, J_d_csr_to_triplet_host_, static_cast<size_t>(J_d_->getNnz()))) {
       nlp_->log->printf(hovError, "Failed to copy ReSolve HyKKT matrix mappings to the device.\n");
       return false;
     }
@@ -550,15 +512,14 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_vector_blocks()
 
   const std::string mem_space = nlp_->options->GetString("mem_space");
   const std::string compute_mode = nlp_->options->GetString("compute_mode");
-  const auto internal_memory = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device") ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
+  const auto internal_memory =
+      compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device")
+          ? ReSolve::memory::DEVICE
+          : ReSolve::memory::HOST;
 
-  if(r_x_->allocate(internal_memory) != 0 ||
-     r_s_->allocate(internal_memory) != 0 ||
-     r_y_->allocate(internal_memory) != 0 ||
-     r_yd_->allocate(internal_memory) != 0 ||
-     x_->allocateAll(internal_memory) != 0 ||
-     s_->allocateAll(internal_memory) != 0 ||
-     y_->allocateAll(internal_memory) != 0 ||
+  if(r_x_->allocate(internal_memory) != 0 || r_s_->allocate(internal_memory) != 0 || r_y_->allocate(internal_memory) != 0 ||
+     r_yd_->allocate(internal_memory) != 0 || x_->allocateAll(internal_memory) != 0 ||
+     s_->allocateAll(internal_memory) != 0 || y_->allocateAll(internal_memory) != 0 ||
      y_d_->allocateAll(internal_memory) != 0) {
     nlp_->log->printf(hovError, "Failed to allocate ReSolve HyKKT vector blocks.\n");
     return false;
@@ -586,7 +547,10 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_solver()
 
   const std::string mem_space = nlp_->options->GetString("mem_space");
   const std::string compute_mode = nlp_->options->GetString("compute_mode");
-  const auto internal_memory = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device") ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
+  const auto internal_memory =
+      compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device")
+          ? ReSolve::memory::DEVICE
+          : ReSolve::memory::HOST;
 
   if(internal_memory == ReSolve::memory::DEVICE) {
 #ifdef HIOP_USE_CUDA
@@ -613,11 +577,7 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::initialize_solver()
     vector_handler_ = new ReSolve::VectorHandler(cpu_workspace_);
   }
 
-  hykkt_solver_ =
-      new ReSolve::hykkt::HyKKTSolver(H_->getNumRows(),
-                                      J_d_->getNumRows(),
-                                      J_->getNumRows(),
-                                      internal_memory);
+  hykkt_solver_ = new ReSolve::hykkt::HyKKTSolver(H_->getNumRows(), J_d_->getNumRows(), J_->getNumRows(), internal_memory);
 
   if(hykkt_solver_->setMatrixBlocks(H_, D_s_, J_, J_d_) != 0) {
     nlp_->log->printf(hovError, "Failed to set ReSolve HyKKT matrix blocks.\n");
@@ -647,7 +607,8 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
 #ifdef HIOP_USE_GPU
   const std::string mem_space = nlp_->options->GetString("mem_space");
   const std::string compute_mode = nlp_->options->GetString("compute_mode");
-  const bool use_device_solver = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device");
+  const bool use_device_solver =
+      compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device");
 #endif
 
   const ReSolve::index_type H_nnz = H_->getNnz();
@@ -681,83 +642,75 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
     constexpr unsigned int blocksize = 512;
 
     if(H_nnz > 0) {
-      const unsigned int gridsize =
-          (static_cast<unsigned int>(H_nnz) + blocksize - 1) / blocksize;
+      const unsigned int gridsize = (static_cast<unsigned int>(H_nnz) + blocksize - 1) / blocksize;
 
       map_triplet_to_csr<double, int>
-          <<<gridsize, blocksize>>>(H_values,
-                                   Hess_values,
-                                   H_csr_to_triplet_device_,
-                                   static_cast<int>(H_nnz));
+          <<<gridsize, blocksize>>>(H_values, Hess_values, H_csr_to_triplet_device_, static_cast<int>(H_nnz));
     }
 
     if(Hx_size > 0) {
-      const unsigned int gridsize =
-          (static_cast<unsigned int>(Hx_size) + blocksize - 1) / blocksize;
+      const unsigned int gridsize = (static_cast<unsigned int>(Hx_size) + blocksize - 1) / blocksize;
 
       add_diagonal_to_csr<double, int>
-          <<<gridsize, blocksize>>>(H_values,
-                                   Hx_values,
-                                   H_diag_to_csr_device_,
-                                   static_cast<int>(Hx_size));
+          <<<gridsize, blocksize>>>(H_values, Hx_values, H_diag_to_csr_device_, static_cast<int>(Hx_size));
     }
 
     if(J_nnz > 0) {
-      const unsigned int gridsize =
-          (static_cast<unsigned int>(J_nnz) + blocksize - 1) / blocksize;
+      const unsigned int gridsize = (static_cast<unsigned int>(J_nnz) + blocksize - 1) / blocksize;
 
       map_triplet_to_csr<double, int>
-          <<<gridsize, blocksize>>>(J_values,
-                                   Jac_c_values,
-                                   J_csr_to_triplet_device_,
-                                   static_cast<int>(J_nnz));
+          <<<gridsize, blocksize>>>(J_values, Jac_c_values, J_csr_to_triplet_device_, static_cast<int>(J_nnz));
     }
 
     if(J_d_nnz > 0) {
-      const unsigned int gridsize =
-          (static_cast<unsigned int>(J_d_nnz) + blocksize - 1) / blocksize;
+      const unsigned int gridsize = (static_cast<unsigned int>(J_d_nnz) + blocksize - 1) / blocksize;
 
       map_triplet_to_csr<double, int>
-          <<<gridsize, blocksize>>>(J_d_values,
-                                   Jac_d_values,
-                                   J_d_csr_to_triplet_device_,
-                                   static_cast<int>(J_d_nnz));
+          <<<gridsize, blocksize>>>(J_d_values, Jac_d_values, J_d_csr_to_triplet_device_, static_cast<int>(J_d_nnz));
     }
 
 #ifdef HIOP_USE_CUDA
     const cudaError_t cuda_launch_status = cudaGetLastError();
     if(cuda_launch_status != cudaSuccess) {
-      nlp_->log->printf(hovError, "CUDA failure launching ReSolve HyKKT matrix update kernels: %s\n", cudaGetErrorString(cuda_launch_status));
+      nlp_->log->printf(hovError,
+                        "CUDA failure launching ReSolve HyKKT matrix update kernels: %s\n",
+                        cudaGetErrorString(cuda_launch_status));
       return false;
     }
 
     if(D_s_nnz > 0) {
-      const cudaError_t cuda_copy_status = cudaMemcpy(D_s_values, Hd_values, static_cast<size_t>(D_s_nnz) * sizeof(double), cudaMemcpyDeviceToDevice);
+      const cudaError_t cuda_copy_status =
+          cudaMemcpy(D_s_values, Hd_values, static_cast<size_t>(D_s_nnz) * sizeof(double), cudaMemcpyDeviceToDevice);
       if(cuda_copy_status != cudaSuccess) {
-        nlp_->log->printf(hovError, "CUDA failure copying ReSolve HyKKT slack diagonal values: %s\n", cudaGetErrorString(cuda_copy_status));
+        nlp_->log->printf(hovError,
+                          "CUDA failure copying ReSolve HyKKT slack diagonal values: %s\n",
+                          cudaGetErrorString(cuda_copy_status));
         return false;
       }
     }
 #elif defined(HIOP_USE_HIP)
     const hipError_t hip_launch_status = hipGetLastError();
     if(hip_launch_status != hipSuccess) {
-      nlp_->log->printf(hovError, "HIP failure launching ReSolve HyKKT matrix update kernels: %s\n", hipGetErrorString(hip_launch_status));
+      nlp_->log->printf(hovError,
+                        "HIP failure launching ReSolve HyKKT matrix update kernels: %s\n",
+                        hipGetErrorString(hip_launch_status));
       return false;
     }
 
     if(D_s_nnz > 0) {
-      const hipError_t hip_copy_status = hipMemcpy(D_s_values, Hd_values, static_cast<size_t>(D_s_nnz) * sizeof(double), hipMemcpyDeviceToDevice);
+      const hipError_t hip_copy_status =
+          hipMemcpy(D_s_values, Hd_values, static_cast<size_t>(D_s_nnz) * sizeof(double), hipMemcpyDeviceToDevice);
       if(hip_copy_status != hipSuccess) {
-        nlp_->log->printf(hovError, "HIP failure copying ReSolve HyKKT slack diagonal values: %s\n", hipGetErrorString(hip_copy_status));
+        nlp_->log->printf(hovError,
+                          "HIP failure copying ReSolve HyKKT slack diagonal values: %s\n",
+                          hipGetErrorString(hip_copy_status));
         return false;
       }
     }
 #endif
 
-    if(H_->setUpdated(ReSolve::memory::DEVICE) != 0 ||
-       D_s_->setUpdated(ReSolve::memory::DEVICE) != 0 ||
-       J_->setUpdated(ReSolve::memory::DEVICE) != 0 ||
-       J_d_->setUpdated(ReSolve::memory::DEVICE) != 0) {
+    if(H_->setUpdated(ReSolve::memory::DEVICE) != 0 || D_s_->setUpdated(ReSolve::memory::DEVICE) != 0 ||
+       J_->setUpdated(ReSolve::memory::DEVICE) != 0 || J_d_->setUpdated(ReSolve::memory::DEVICE) != 0) {
       nlp_->log->printf(hovError, "Failed to mark ReSolve HyKKT device matrix blocks as updated.\n");
       return false;
     }
@@ -778,8 +731,7 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
   const double* Hd_values = Hd_->local_data();
 
   if((H_nnz > 0 && (!H_values || !Hess_values || !H_csr_to_triplet_host_)) ||
-     (Hx_size > 0 && (!H_values || !Hx_values || !H_diag_to_csr_host_)) ||
-     (D_s_nnz > 0 && (!D_s_values || !Hd_values)) ||
+     (Hx_size > 0 && (!H_values || !Hx_values || !H_diag_to_csr_host_)) || (D_s_nnz > 0 && (!D_s_values || !Hd_values)) ||
      (J_nnz > 0 && (!J_values || !Jac_c_values || !J_csr_to_triplet_host_)) ||
      (J_d_nnz > 0 && (!J_d_values || !Jac_d_values || !J_d_csr_to_triplet_host_))) {
     nlp_->log->printf(hovError, "Failed to access HyKKT matrix block values.\n");
@@ -808,20 +760,16 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::update_matrix_blocks()
     D_s_values[k] = Hd_values[k];
   }
 
-  if(H_->setUpdated(ReSolve::memory::HOST) != 0 ||
-     D_s_->setUpdated(ReSolve::memory::HOST) != 0 ||
-     J_->setUpdated(ReSolve::memory::HOST) != 0 ||
-     J_d_->setUpdated(ReSolve::memory::HOST) != 0) {
+  if(H_->setUpdated(ReSolve::memory::HOST) != 0 || D_s_->setUpdated(ReSolve::memory::HOST) != 0 ||
+     J_->setUpdated(ReSolve::memory::HOST) != 0 || J_d_->setUpdated(ReSolve::memory::HOST) != 0) {
     nlp_->log->printf(hovError, "Failed to mark ReSolve HyKKT matrix blocks as updated.\n");
     return false;
   }
 
 #ifdef HIOP_USE_GPU
   if(use_device_solver) {
-    if(H_->syncData(ReSolve::memory::DEVICE) != 0 ||
-       D_s_->syncData(ReSolve::memory::DEVICE) != 0 ||
-       J_->syncData(ReSolve::memory::DEVICE) != 0 ||
-       J_d_->syncData(ReSolve::memory::DEVICE) != 0) {
+    if(H_->syncData(ReSolve::memory::DEVICE) != 0 || D_s_->syncData(ReSolve::memory::DEVICE) != 0 ||
+       J_->syncData(ReSolve::memory::DEVICE) != 0 || J_d_->syncData(ReSolve::memory::DEVICE) != 0) {
       nlp_->log->printf(hovError, "Failed to copy ReSolve HyKKT matrix blocks to the device.\n");
       return false;
     }
@@ -876,8 +824,7 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::build_kkt_matrix(const hiopPDPert
 
   // HyKKT currently has no matrix blocks for the dual regularization terms.
   if(delta_cc_->infnorm() != 0.0 || delta_cd_->infnorm() != 0.0) {
-    nlp_->log->printf(hovError,
-                      "ReSolve HyKKT does not support nonzero dual regularization.\n");
+    nlp_->log->printf(hovError, "ReSolve HyKKT does not support nonzero dual regularization.\n");
     return false;
   }
 
@@ -928,15 +875,17 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
   const std::string mem_space = nlp_->options->GetString("mem_space");
   const std::string compute_mode = nlp_->options->GetString("compute_mode");
   const auto external_memory = mem_space == "device" ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
-  const auto internal_memory = compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device") ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
+  const auto internal_memory =
+      compute_mode == "hybrid" || compute_mode == "gpu" || (compute_mode == "auto" && mem_space == "device")
+          ? ReSolve::memory::DEVICE
+          : ReSolve::memory::HOST;
 
   nlp_->runStats.kkt.tmSolveRhsManip.start();
 
-  const bool rhs_ok =
-      r_x_->copyFromExternal(rx.local_data_const(), external_memory, internal_memory) == 0 &&
-      r_s_->copyFromExternal(rd.local_data_const(), external_memory, internal_memory) == 0 &&
-      r_y_->copyFromExternal(ryc.local_data_const(), external_memory, internal_memory) == 0 &&
-      r_yd_->copyFromExternal(ryd.local_data_const(), external_memory, internal_memory) == 0;
+  const bool rhs_ok = r_x_->copyFromExternal(rx.local_data_const(), external_memory, internal_memory) == 0 &&
+                      r_s_->copyFromExternal(rd.local_data_const(), external_memory, internal_memory) == 0 &&
+                      r_y_->copyFromExternal(ryc.local_data_const(), external_memory, internal_memory) == 0 &&
+                      r_yd_->copyFromExternal(ryd.local_data_const(), external_memory, internal_memory) == 0;
 
   nlp_->runStats.kkt.tmSolveRhsManip.stop();
 
@@ -948,22 +897,18 @@ bool hiopKKTLinSysCompressedSparseXDYcYdHyKKT::solveCompressed(hiopVector& rx,
   const ReSolve::real_type error = hykkt_solver_->solve();
   nlp_->runStats.kkt.tmSolveInner.stop();
 
-  const ReSolve::real_type residual_tol =
-      nlp_->options->GetNumeric("hykkt_residual_tol");
+  const ReSolve::real_type residual_tol = nlp_->options->GetNumeric("hykkt_residual_tol");
   if(!std::isfinite(error) || error >= residual_tol) {
-    nlp_->log->printf(hovError,
-                      "ReSolve HyKKT solve failed with residual %e.\n",
-                      error);
+    nlp_->log->printf(hovError, "ReSolve HyKKT solve failed with residual %e.\n", error);
     return false;
   }
 
   nlp_->runStats.kkt.tmSolveRhsManip.start();
 
-  const bool solution_ok =
-      x_->copyToExternal(dx.local_data(), internal_memory, external_memory) == 0 &&
-      s_->copyToExternal(dd.local_data(), internal_memory, external_memory) == 0 &&
-      y_->copyToExternal(dyc.local_data(), internal_memory, external_memory) == 0 &&
-      y_d_->copyToExternal(dyd.local_data(), internal_memory, external_memory) == 0;
+  const bool solution_ok = x_->copyToExternal(dx.local_data(), internal_memory, external_memory) == 0 &&
+                           s_->copyToExternal(dd.local_data(), internal_memory, external_memory) == 0 &&
+                           y_->copyToExternal(dyc.local_data(), internal_memory, external_memory) == 0 &&
+                           y_d_->copyToExternal(dyd.local_data(), internal_memory, external_memory) == 0;
 
   nlp_->runStats.kkt.tmSolveRhsManip.stop();
 
