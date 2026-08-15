@@ -54,6 +54,39 @@
 
 #include "hiopCSR_IO.hpp"
 
+namespace ReSolve
+{
+
+class MatrixHandler;
+class VectorHandler;
+
+class LinAlgWorkspaceCpu;
+
+#ifdef HIOP_USE_CUDA
+class LinAlgWorkspaceCUDA;
+#endif
+
+#ifdef HIOP_USE_HIP
+class LinAlgWorkspaceHIP;
+#endif
+
+namespace hykkt
+{
+class HyKKTSolver;
+}
+
+namespace matrix
+{
+class Csr;
+}
+
+namespace vector
+{
+class Vector;
+}
+
+}  // namespace ReSolve
+
 namespace hiop
 {
 
@@ -181,6 +214,83 @@ protected:
 private:
   // placeholder for the code that decides which linear solver to used based on safe_mode_
   hiopLinSolverSymSparse* determineAndCreateLinsys(int nxd, int neq, int nineq, int nnz);
+};
+
+/*
+ * Solves KKTLinSysCompressedXDYcYd using ReSolve's HyKKT solver.
+ *
+ * HyKKT operates directly on the KKT matrix blocks instead of assembling
+ * the full sparse KKT matrix.
+ */
+class hiopKKTLinSysCompressedSparseXDYcYdHyKKT : public hiopKKTLinSysCompressedSparseXDYcYd
+{
+public:
+  hiopKKTLinSysCompressedSparseXDYcYdHyKKT(hiopNlpFormulation* nlp);
+  virtual ~hiopKKTLinSysCompressedSparseXDYcYdHyKKT();
+
+  virtual bool build_kkt_matrix(const hiopPDPerturbation& pdreg);
+
+  virtual bool solveCompressed(hiopVector& rx,
+                               hiopVector& rd,
+                               hiopVector& ryc,
+                               hiopVector& ryd,
+                               hiopVector& dx,
+                               hiopVector& dd,
+                               hiopVector& dyc,
+                               hiopVector& dyd);
+
+protected:
+  virtual int factorizeWithCurvCheck();
+
+private:
+  ReSolve::hykkt::HyKKTSolver* hykkt_solver_;
+
+  ReSolve::matrix::Csr* H_;
+  ReSolve::matrix::Csr* D_s_;
+  ReSolve::matrix::Csr* J_;
+  ReSolve::matrix::Csr* J_d_;
+
+  // HiOp rd/dd correspond to HyKKT's slack blocks r_s/s.
+  ReSolve::vector::Vector* r_x_;
+  ReSolve::vector::Vector* r_s_;
+  ReSolve::vector::Vector* r_y_;
+  ReSolve::vector::Vector* r_yd_;
+
+  ReSolve::vector::Vector* x_;
+  ReSolve::vector::Vector* s_;
+  ReSolve::vector::Vector* y_;
+  ReSolve::vector::Vector* y_d_;
+
+  ReSolve::LinAlgWorkspaceCpu* cpu_workspace_;
+#ifdef HIOP_USE_CUDA
+  ReSolve::LinAlgWorkspaceCUDA* cuda_workspace_;
+#endif
+
+#ifdef HIOP_USE_HIP
+  ReSolve::LinAlgWorkspaceHIP* hip_workspace_;
+#endif
+
+  ReSolve::MatrixHandler* matrix_handler_;
+  ReSolve::VectorHandler* vector_handler_;
+
+  // Maps persistent ReSolve CSR entries to HiOp triplet entries for
+  // numerical updates; H_diag_to_csr_host_ locates the added Hx diagonal.
+  int* H_csr_to_triplet_host_;
+  int* H_diag_to_csr_host_;
+  int* J_csr_to_triplet_host_;
+  int* J_d_csr_to_triplet_host_;
+
+#ifdef HIOP_USE_GPU
+  int* H_csr_to_triplet_device_;
+  int* H_diag_to_csr_device_;
+  int* J_csr_to_triplet_device_;
+  int* J_d_csr_to_triplet_device_;
+#endif
+
+  bool initialize_matrix_blocks();
+  bool initialize_vector_blocks();
+  bool initialize_solver();
+  bool update_matrix_blocks();
 };
 
 /*
