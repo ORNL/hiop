@@ -454,12 +454,10 @@ bool hiopDualsLsqUpdateLinsysAugSparse::instantiate_linear_solver(const char* li
         return false;
       }
 
-#ifdef HIOP_USE_RESOLVE
       if(nullptr == lin_sys_ && (linear_solver == "resolve" || linear_solver == "auto")) {
         ss_log << "LSQ linear solver --- KKT_SPARSE_XDYcYd linsys: ReSolve ";
         lin_sys_ = new hiopLinSolverSymSparseReSolve(n, nnz, nlp_);
       }
-#endif
 #else  // no ReSolve support
        // under compute mode gpu, at this point we don't have a sparse linear solver
       if(compute_mode == "gpu") {
