@@ -47,7 +47,7 @@
 // endorsement purposes.
 
 /**
- * @file hiopLinSolverSparseEVLOSER.hpp
+ * @file hiopLinSolverSparseReSolve.hpp
  *
  * @author Tamar DeWilde <dewildetc@ornl.gov>
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
@@ -55,8 +55,8 @@
  *
  */
 
-#ifndef HIOP_LINSOLVER_EVLOSER
-#define HIOP_LINSOLVER_EVLOSER
+#ifndef HIOP_LINSOLVER_RESOLVE
+#define HIOP_LINSOLVER_RESOLVE
 
 #include "hiopLinSolver.hpp"
 
@@ -108,12 +108,12 @@ class hiopMatrixSparse;
  *
  * @ingroup LinearSolvers
  */
-class hiopLinSolverSymSparseEVLOSER : public hiopLinSolverSymSparse
+class hiopLinSolverSymSparseReSolve : public hiopLinSolverSymSparse
 {
 public:
-  hiopLinSolverSymSparseEVLOSER(const int& n, const int& nnz, hiopNlpFormulation* nlp);
+  hiopLinSolverSymSparseReSolve(const int& n, const int& nnz, hiopNlpFormulation* nlp);
 
-  virtual ~hiopLinSolverSymSparseEVLOSER();
+  virtual ~hiopLinSolverSymSparseReSolve();
 
   /**
    * @brief Update matrix values and factorize or refactorize the selected

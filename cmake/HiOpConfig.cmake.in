@@ -3,7 +3,7 @@
 
 include(CMakeFindDependencyMacro)
 
-if(@HIOP_USE_EVLOSER@ AND NOT TARGET ReSolve::ReSolve)
+if(@HIOP_USE_RESOLVE@ AND NOT TARGET ReSolve::ReSolve)
   find_dependency(ReSolve CONFIG REQUIRED
     HINTS ${ReSolve_DIR} ENV ReSolve_DIR
     PATH_SUFFIXES share/resolve/cmake)

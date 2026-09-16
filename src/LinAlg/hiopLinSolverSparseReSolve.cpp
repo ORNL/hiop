@@ -47,7 +47,7 @@
 // endorsement purposes.
 
 /**
- * @file hiopLinSolverSparseEVLOSER.cpp
+ * @file hiopLinSolverSparseReSolve.cpp
  *
  * @author Tamar DeWilde <dewildetc@ornl.gov>
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
@@ -61,7 +61,7 @@
  * assembled from ReSolve's public FGMRES and LU-preconditioner components.
  */
 
-#include "hiopLinSolverSparseEVLOSER.hpp"
+#include "hiopLinSolverSparseReSolve.hpp"
 
 #include "LinAlgFactory.hpp"
 #include "hiopMatrixSparse.hpp"
@@ -190,7 +190,7 @@ __global__ void addToArrayKernel(T* dst, const T* src, const I* mapidx, I n, I n
 
 }  // namespace
 
-hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const int& nnz, hiopNlpFormulation* nlp)
+hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const int& nnz, hiopNlpFormulation* nlp)
     : hiopLinSolverSymSparse(n, nnz, nlp),
       M_host_(nullptr),
       n_(n),
@@ -230,11 +230,11 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
 #ifdef HIOP_USE_GPU
     M_host_ = LinearAlgebraFactory::create_matrix_sparse("default", n, n, nnz);
 #else
-    nlp_->log->printf(hovError, "EVLOSER device execution requires a CUDA or HIP build.\n");
+    nlp_->log->printf(hovError, "ReSolve device execution requires a CUDA or HIP build.\n");
     std::abort();
 #endif
   } else if(mem_space != "host" && mem_space != "default") {
-    nlp_->log->printf(hovError, "Memory space %s is not supported by EVLOSER.\n", mem_space.c_str());
+    nlp_->log->printf(hovError, "Memory space %s is not supported by ReSolve.\n", mem_space.c_str());
     std::abort();
   }
 
@@ -242,7 +242,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   const std::string compute_mode = nlp_->options->GetString("compute_mode");
 
   if(mem_space == "device" && compute_mode == "cpu") {
-    nlp_->log->printf(hovError, "EVLOSER CPU execution does not support device-resident input.\n");
+    nlp_->log->printf(hovError, "ReSolve CPU execution does not support device-resident input.\n");
     std::abort();
   }
 #endif
@@ -255,7 +255,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
     ordering_method = 0;
   } else if(ordering != "colamd-ssparse") {
     nlp_->log->printf(hovWarning,
-                      "Ordering %s is not supported by EVLOSER; "
+                      "Ordering %s is not supported by ReSolve; "
                       "using colamd-ssparse.\n",
                       ordering.c_str());
   }
@@ -340,7 +340,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
       ir_preconditioner_ = new ReSolve::PreconditionerLU(cuda_rf_solver_);
     } else if(refactorization_mode_ == RefactorizationMode::CUDA_GLU) {
       nlp_->log->printf(hovWarning,
-                        "EVLOSER iterative refinement is supported only with RF; "
+                        "ReSolve iterative refinement is supported only with RF; "
                         "disabling it for CUDA GLU.\n");
     }
 #endif
@@ -382,7 +382,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
         use_ir_ = true;
       } else {
         nlp_->log->printf(hovWarning,
-                          "EVLOSER iterative refinement configuration failed; "
+                          "ReSolve iterative refinement configuration failed; "
                           "using the direct solution only.\n");
       }
     }
@@ -416,7 +416,7 @@ hiopLinSolverSymSparseEVLOSER::hiopLinSolverSymSparseEVLOSER(const int& n, const
   nlp_->log->printf(hovSummary, "Use IR: %s\n", use_ir_ ? "yes" : "no");
 }
 
-hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
+hiopLinSolverSymSparseReSolve::~hiopLinSolverSymSparseReSolve()
 {
   delete ir_solver_;
   delete ir_preconditioner_;
@@ -467,7 +467,7 @@ hiopLinSolverSymSparseEVLOSER::~hiopLinSolverSymSparseEVLOSER()
 #endif
 }
 
-int hiopLinSolverSymSparseEVLOSER::matrixChanged()
+int hiopLinSolverSymSparseReSolve::matrixChanged()
 {
   assert(M_ != nullptr);
   assert(n_ == M_->n());
@@ -501,7 +501,7 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
     status = factorization_solver_->factorize();
 
     if(status != 0) {
-      nlp_->log->printf(hovWarning, "EVLOSER KLU factorization failed. Regularizing ...\n");
+      nlp_->log->printf(hovWarning, "ReSolve KLU factorization failed. Regularizing ...\n");
 
       nlp_->runStats.linsolv.tmFactTime.stop();
       return -1;
@@ -511,7 +511,7 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
       status = setup_refactorization_solver();
 
       if(status != 0) {
-        nlp_->log->printf(hovWarning, "EVLOSER refactorization solver setup failed.\n");
+        nlp_->log->printf(hovWarning, "ReSolve refactorization solver setup failed.\n");
 
         nlp_->runStats.linsolv.tmFactTime.stop();
         return -1;
@@ -526,7 +526,7 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
 
         if(ir_status != 0) {
           nlp_->log->printf(hovWarning,
-                            "EVLOSER iterative refinement setup failed; "
+                            "ReSolve iterative refinement setup failed; "
                             "using the direct solver only.\n");
 
           use_ir_ = false;
@@ -565,7 +565,7 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
 
     if(status != 0) {
       nlp_->log->printf(hovWarning,
-                        "EVLOSER initial numerical refactorization failed. "
+                        "ReSolve initial numerical refactorization failed. "
                         "Regularizing ...\n");
 
       nlp_->runStats.linsolv.tmFactTime.stop();
@@ -574,12 +574,12 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
 
     factorizationSetupSucc_ = 1;
 
-    nlp_->log->printf(hovScalars, "EVLOSER factorization setup successful.\n");
+    nlp_->log->printf(hovScalars, "ReSolve factorization setup successful.\n");
   } else {
     status = refactorize_selected_solver();
 
     if(status != 0) {
-      nlp_->log->printf(hovWarning, "EVLOSER refactorization failed. Regularizing ...\n");
+      nlp_->log->printf(hovWarning, "ReSolve refactorization failed. Regularizing ...\n");
 
       factorizationSetupSucc_ = 0;
 
@@ -594,7 +594,7 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
 
       if(ir_status != 0) {
         nlp_->log->printf(hovWarning,
-                          "EVLOSER iterative refinement matrix reset failed; "
+                          "ReSolve iterative refinement matrix reset failed; "
                           "using the direct solver only.\n");
 
         use_ir_ = false;
@@ -608,7 +608,7 @@ int hiopLinSolverSymSparseEVLOSER::matrixChanged()
   return 0;
 }
 
-bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
+bool hiopLinSolverSymSparseReSolve::solve(hiopVector& x)
 {
   assert(M_ != nullptr);
   assert(n_ == M_->n());
@@ -617,7 +617,7 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
   assert(x.get_size() == M_->n());
 
   if(factorizationSetupSucc_ == 0) {
-    nlp_->log->printf(hovError, "EVLOSER solve requested without a valid factorization.\n");
+    nlp_->log->printf(hovError, "ReSolve solve requested without a valid factorization.\n");
     return false;
   }
 
@@ -646,7 +646,7 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
   }
 
   if(solve_selected_solver() != 0) {
-    nlp_->log->printf(hovError, "EVLOSER solve failed.\n");
+    nlp_->log->printf(hovError, "ReSolve solve failed.\n");
 
     nlp_->runStats.linsolv.tmTriuSolves.stop();
     return false;
@@ -659,14 +659,14 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
     const int ir_status = ir_solver_->solve(rhs_, solution_);
 
     if(ir_status != 0) {
-      nlp_->log->printf(hovError, "EVLOSER iterative refinement failed.\n");
+      nlp_->log->printf(hovError, "ReSolve iterative refinement failed.\n");
 
       nlp_->runStats.linsolv.tmTriuSolves.stop();
       return false;
     }
 
     nlp_->log->printf(hovScalars,
-                      "EVLOSER IR iterations: %d, "
+                      "ReSolve IR iterations: %d, "
                       "final relative residual: %e\n",
                       static_cast<int>(ir_solver_->getNumIter()),
                       ir_solver_->getFinalResidualNorm());
@@ -683,7 +683,7 @@ bool hiopLinSolverSymSparseEVLOSER::solve(hiopVector& x)
   return true;
 }
 
-int hiopLinSolverSymSparseEVLOSER::firstCall()
+int hiopLinSolverSymSparseReSolve::firstCall()
 {
   assert(M_ != nullptr);
   assert(n_ == M_->n());
@@ -701,7 +701,7 @@ int hiopLinSolverSymSparseEVLOSER::firstCall()
                             M_host_->M(),
                             M_->M(),
                             sizeof(double) * static_cast<size_t>(M_->numberOfNonzeros()),
-                            "copying EVLOSER values to the host")) {
+                            "copying ReSolve values to the host")) {
       return -1;
     }
 
@@ -709,7 +709,7 @@ int hiopLinSolverSymSparseEVLOSER::firstCall()
                             M_host_->i_row(),
                             M_->i_row(),
                             sizeof(index_type) * static_cast<size_t>(M_->numberOfNonzeros()),
-                            "copying EVLOSER row indices to the host")) {
+                            "copying ReSolve row indices to the host")) {
       return -1;
     }
 
@@ -717,7 +717,7 @@ int hiopLinSolverSymSparseEVLOSER::firstCall()
                             M_host_->j_col(),
                             M_->j_col(),
                             sizeof(index_type) * static_cast<size_t>(M_->numberOfNonzeros()),
-                            "copying EVLOSER column indices to the host")) {
+                            "copying ReSolve column indices to the host")) {
       return -1;
     }
   }
@@ -829,7 +829,7 @@ int hiopLinSolverSymSparseEVLOSER::firstCall()
   return 0;
 }
 
-int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
+int hiopLinSolverSymSparseReSolve::update_matrix_values()
 {
   assert(M_ != nullptr);
   assert(matrix_ != nullptr);
@@ -844,7 +844,7 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 
     if(values == nullptr || source_values == nullptr || index_convert_CSR2Triplet_device_ == nullptr ||
        index_convert_extra_Diag2CSR_device_ == nullptr) {
-      nlp_->log->printf(hovError, "Failed to access EVLOSER device matrix data.\n");
+      nlp_->log->printf(hovError, "Failed to access ReSolve device matrix data.\n");
       return -1;
     }
 
@@ -905,7 +905,7 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
 #endif
 
     if(matrix_->setUpdated(ReSolve::memory::DEVICE) != 0) {
-      nlp_->log->printf(hovError, "Failed to mark EVLOSER device matrix values as updated.\n");
+      nlp_->log->printf(hovError, "Failed to mark ReSolve device matrix values as updated.\n");
       return -1;
     }
 
@@ -914,7 +914,7 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
     // directly and no host synchronization is required.
     if(factorizationSetupSucc_ == 0 && !refactorization_setup_complete_) {
       if(matrix_->syncData(ReSolve::memory::HOST) != 0) {
-        nlp_->log->printf(hovError, "Failed to synchronize EVLOSER matrix values to the host.\n");
+        nlp_->log->printf(hovError, "Failed to synchronize ReSolve matrix values to the host.\n");
         return -1;
       }
     }
@@ -928,7 +928,7 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
   double* values = matrix_->getValues(ReSolve::memory::HOST);
 
   if(values == nullptr) {
-    nlp_->log->printf(hovError, "Failed to access EVLOSER host matrix values.\n");
+    nlp_->log->printf(hovError, "Failed to access ReSolve host matrix values.\n");
     return -1;
   }
 
@@ -943,7 +943,7 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
   }
 
   if(matrix_->setUpdated(ReSolve::memory::HOST) != 0) {
-    nlp_->log->printf(hovError, "Failed to mark EVLOSER host matrix values as updated.\n");
+    nlp_->log->printf(hovError, "Failed to mark ReSolve host matrix values as updated.\n");
     return -1;
   }
 
@@ -951,7 +951,7 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
   if(refactorization_mode_ != RefactorizationMode::CPU_KLU) {
     // Accelerator refactorization consumes device values.
     if(matrix_->syncData(ReSolve::memory::DEVICE) != 0) {
-      nlp_->log->printf(hovError, "Failed to synchronize EVLOSER matrix values to the device.\n");
+      nlp_->log->printf(hovError, "Failed to synchronize ReSolve matrix values to the device.\n");
       return -1;
     }
   }
@@ -960,12 +960,12 @@ int hiopLinSolverSymSparseEVLOSER::update_matrix_values()
   return 0;
 }
 
-hiopMatrixSparse* hiopLinSolverSymSparseEVLOSER::host_matrix() const
+hiopMatrixSparse* hiopLinSolverSymSparseReSolve::host_matrix() const
 {
   return nlp_->options->GetString("mem_space") == "device" ? M_host_ : M_;
 }
 
-void hiopLinSolverSymSparseEVLOSER::compute_nnz()
+void hiopLinSolverSymSparseReSolve::compute_nnz()
 {
   hiopMatrixSparse* source = host_matrix();
   assert(source != nullptr);
@@ -981,7 +981,7 @@ void hiopLinSolverSymSparseEVLOSER::compute_nnz()
   }
 }
 
-int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
+int hiopLinSolverSymSparseReSolve::set_csr_indices_values()
 {
   assert(M_ != nullptr);
   assert(matrix_ != nullptr);
@@ -1234,7 +1234,7 @@ int hiopLinSolverSymSparseEVLOSER::set_csr_indices_values()
   return 0;
 }
 
-int hiopLinSolverSymSparseEVLOSER::setup_refactorization_solver()
+int hiopLinSolverSymSparseReSolve::setup_refactorization_solver()
 {
   if(refactorization_mode_ == RefactorizationMode::CPU_KLU) {
     return 0;
@@ -1250,7 +1250,7 @@ int hiopLinSolverSymSparseEVLOSER::setup_refactorization_solver()
   ReSolve::index_type* Q = factorization_solver_->getQOrdering();
 
   if(L == nullptr || U == nullptr || P == nullptr || Q == nullptr) {
-    nlp_->log->printf(hovError, "Failed to extract KLU factors for EVLOSER.\n");
+    nlp_->log->printf(hovError, "Failed to extract KLU factors for ReSolve.\n");
     return -1;
   }
 #endif
@@ -1282,7 +1282,7 @@ int hiopLinSolverSymSparseEVLOSER::setup_refactorization_solver()
   return -1;
 }
 
-int hiopLinSolverSymSparseEVLOSER::refactorize_selected_solver()
+int hiopLinSolverSymSparseReSolve::refactorize_selected_solver()
 {
   switch(refactorization_mode_) {
     case RefactorizationMode::CPU_KLU:
@@ -1307,7 +1307,7 @@ int hiopLinSolverSymSparseEVLOSER::refactorize_selected_solver()
   return -1;
 }
 
-int hiopLinSolverSymSparseEVLOSER::solve_selected_solver()
+int hiopLinSolverSymSparseReSolve::solve_selected_solver()
 {
   switch(refactorization_mode_) {
     case RefactorizationMode::CPU_KLU:
