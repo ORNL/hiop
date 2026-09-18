@@ -149,7 +149,7 @@ if(HIOP_SPARSE)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_PARDISO_SRC})
     endif(HIOP_USE_PARDISO)
     if(HIOP_USE_RESOLVE)
-      find_package(ReSolve CONFIG REQUIRED)
+      find_package(ReSolve CONFIG REQUIRED HINTS ${ReSolve_DIR} ${ReSolve_DIR}/share/resolve/cmake)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_RESOLVE_SRC})
       target_link_libraries(hiop_tpl INTERFACE ReSolve::ReSolve)
     endif()
@@ -178,7 +178,7 @@ if(HIOP_USE_HIP)
   # Mark appropriate source files as HIP. I guess in the future just a
   # LANGUAGE HIP property will suffice. For now do it via compile flags
   # Reference: https://www.olcf.ornl.gov/wp-content/uploads/2021/01/2021UM-Day-3-Joo-Developing-for-Frontier-using-HIP-on-Spock.pdf
-#  set_source_files_properties(${hiopLinAlg_HIPVECTORKERNELS_SRC} PROPERTIES LANGUAGE HIP)
+  # set_source_files_properties(${hiopLinAlg_HIPVECTORKERNELS_SRC} PROPERTIES LANGUAGE HIP)
 
   set_source_files_properties(
     ${hiopLinAlg_HIPVECTORKERNELS_SRC}
