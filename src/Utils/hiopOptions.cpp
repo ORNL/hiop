@@ -1007,7 +1007,8 @@ void hiopOptionsNLP::register_options()
                         default_value,
                         range,
                         "Numerical refactorization function after sparsity pattern of factors is computed. "
-                        "'glu' is experimental and 'rf' is NVIDIA's stable refactorization. ");
+                        "'glu' is experimental, selects CUDA GLU refactorization, and falls back to RF on HIP; "
+                        "'rf' selects the available CUDA or HIP RF implementation. ");
   }
 
   register_int_option("ir_inner_restart", 20, 1, 100, "(F)GMRES restart value (default is 20). ");
