@@ -47,6 +47,7 @@ option(HIOP_USE_COINHSL "Build with sparse linear algebra" ON)
 option(HIOP_USE_GINKGO "Build with Ginkgo backend for sparse linear algebra" OFF)
 option(HIOP_USE_PARDISO "Build with PARDISO backend for sparse linear algebra" OFF)
 option(HIOP_USE_STRUMPACK "Build with STRUMPACK backend for sparse linear algebra" OFF)
+option(HIOP_USE_RESOLVE "Build with external ReSolve sparse solver support" OFF)
 option(HIOP_WITH_VALGRIND_TESTS "Run valgrind on certain integration tests" OFF)
 option(HIOP_BUILD_DOCUMENTATION "Build HiOp documentation via Doxygen" ON)
 option(HIOP_BUILD_FORTRAN_EXAMPLE "Build Fortran examples" ON)
@@ -95,11 +96,6 @@ cmake_dependent_option(
 )
 cmake_dependent_option(
   HIOP_USE_MAGMA "Use Magma linear algebra" ON "HIOP_USE_GPU" OFF
-)
-option(
-  HIOP_USE_RESOLVE
-  "Build with external ReSolve sparse solver support"
-  OFF
 )
 
 add_library(hiop_tpl INTERFACE)
@@ -385,10 +381,14 @@ if(HIOP_SPARSE)
     endif()
   endif(HIOP_USE_GINKGO)
 
+  if(HIOP_USE_RESOLVE)
+    include(FindReSolve)
+  endif(HIOP_USE_RESOLVE)
+
   if(NOT HIOP_USE_COINHSL AND NOT HIOP_USE_STRUMPACK AND NOT HIOP_USE_PARDISO AND NOT HIOP_USE_GINKGO AND NOT HIOP_USE_RESOLVE)
     set(HIOP_SPARSE OFF CACHE BOOL "Build without sparse linear algebra" FORCE)
     message(STATUS "Cannot find COINHSL, STRUMPACK, PARDISO, GINKGO, or external ReSolve support for sparse linear algebra, and the option HIOP_SPARSE will be disabled")
-endif()
+  endif()
 else(HIOP_SPARSE)
   set(HIOP_USE_COINHSL OFF CACHE BOOL "Build without COINHSL" FORCE)
   set(HIOP_USE_STRUMPACK OFF CACHE BOOL "Build without STRUMPACK" FORCE)
@@ -397,7 +397,7 @@ else(HIOP_SPARSE)
   set(HIOP_USE_GINKGO OFF CACHE BOOL "Build without GINKGO" FORCE)
 endif(HIOP_SPARSE)
 
-# It simplifies linking against metis to set an internal variable
+  # It simplifies linking against metis to set an internal variable
 if(HIOP_SPARSE OR HIOP_WITH_KRON_REDUCTION)
   set(HIOP_USE_METIS ON CACHE BOOL "Link against METIS library ${METIS_LIBRARY}" FORCE)
 else()
