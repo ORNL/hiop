@@ -1922,6 +1922,11 @@ hiopKKTLinSys* hiopAlgFilterIPMNewton::decideAndCreateLinearSystem(hiopNlpFormul
       if(strKKT == "full") {
         return new hiopKKTLinSysSparseFull(nlp);
       } else if(strKKT == "xdycyd") {
+#ifdef HIOP_USE_RESOLVE
+        if(nlp->options->GetString("linear_solver_sparse") == "hykkt") {
+          return new hiopKKTLinSysCompressedSparseXDYcYdHyKKT(nlp);
+        }
+#endif
         return new hiopKKTLinSysCompressedSparseXDYcYd(nlp);
       } else if(strKKT == "condensed") {
         return new hiopKKTLinSysCondensedSparse(nlp);
