@@ -259,7 +259,7 @@ hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const
                       ordering.c_str());
   }
 
-  // Select the ReSolve refactorization method and create the system solver
+  // Select the Re::Solve refactorization method and create the system solver
   // on the matching workspace. SystemSolver owns KLU, the refactorization
   // backend, and any iterative-refinement components.
   if(solve_on_device_) {
@@ -267,7 +267,9 @@ hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const
     const std::string refactorization = nlp_->options->GetString("resolve_refactorization");
 
 #ifdef HIOP_USE_CUDA
-    refactorization_method_ = refactorization == "rf" ? "cusolverrf" : "glu";
+    if (refactorization == "rf")
+      refactorization = "cusolverrf";
+    refactorization_method_ = refactorization;
 
     cuda_workspace_ = new ReSolve::LinAlgWorkspaceCUDA();
     cuda_workspace_->initializeHandles();
@@ -281,9 +283,12 @@ hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const
 #elif defined(HIOP_USE_HIP)
     if(refactorization == "glu") {
       nlp_->log->printf(hovWarning, "GLU is unavailable with HIP; using rocSolverRf.\n");
+      refactorization = "rocsolverrf";
     }
+    if (refactorization == "rf")
+      refactorization = "rocsolverrf";
 
-    refactorization_method_ = "rocsolverrf";
+    refactorization_method_ = refactorization;
 
     hip_workspace_ = new ReSolve::LinAlgWorkspaceHIP();
     hip_workspace_->initializeHandles();
