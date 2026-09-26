@@ -46,19 +46,21 @@
 // National Security, LLC, and shall not be used for advertising or product
 // endorsement purposes.
 
+
 /**
  * @file hiopLinSolverSparseReSolve.cpp
  *
- * @author Tamar DeWilde <dewildetc@ornl.gov>
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
  * @author Slaven Peles <peless@ornl.gov>, ORNL
+ * @author Tamar DeWilde <dewildetc@ornl.gov>
  *
- * @brief Sparse symmetric linear solver adapter for ReSolve's public API.
+ * @brief Sparse symmetric linear solver adapter for ReSolve's SystemSolver.
  *
- * The adapter converts HiOp's symmetric triplet matrix to CSR, performs the
- * initial KLU analysis and factorization, and coordinates the selected host
- * or accelerator refactorization backend. Optional iterative refinement is
- * assembled from ReSolve's public FGMRES and LU-preconditioner components.
+ * The adapter converts HiOp's symmetric triplet matrix to CSR and drives
+ * ReSolve::SystemSolver, which performs the initial KLU analysis and
+ * factorization, sets up the selected host or accelerator refactorization
+ * backend, and optionally wraps the triangular solve in FGMRES iterative
+ * refinement.
  */
 
 #include "hiopLinSolverSparseReSolve.hpp"
@@ -69,25 +71,20 @@
 
 #include "hiopCppStdUtils.hpp"
 
-#include <resolve/LinSolverDirectKLU.hpp>
+#include <resolve/LinSolverDirect.hpp>
+#include <resolve/LinSolverIterative.hpp>
+#include <resolve/SystemSolver.hpp>
 #include <resolve/matrix/Csr.hpp>
 #include <resolve/vector/Vector.hpp>
-#include <resolve/GramSchmidt.hpp>
-#include <resolve/LinSolverIterativeFGMRES.hpp>
-#include <resolve/PreconditionerLU.hpp>
-#include <resolve/matrix/MatrixHandler.hpp>
-#include <resolve/vector/VectorHandler.hpp>
+#include <resolve/workspace/LinAlgWorkspaceCpu.hpp>
 
 #ifdef HIOP_USE_CUDA
 #include <cuda_runtime.h>
-#include <resolve/LinSolverDirectCuSolverGLU.hpp>
-#include <resolve/LinSolverDirectCuSolverRf.hpp>
 #include <resolve/workspace/LinAlgWorkspaceCUDA.hpp>
 #endif
 
 #ifdef HIOP_USE_HIP
 #include <hip/hip_runtime.h>
-#include <resolve/LinSolverDirectRocSolverRf.hpp>
 #include <resolve/workspace/LinAlgWorkspaceHIP.hpp>
 #endif
 
@@ -188,6 +185,27 @@ __global__ void addToArrayKernel(T* dst, const T* src, const I* mapidx, I n, I n
 
 #endif
 
+/**
+ * @brief Map HiOp's Gram-Schmidt option value to ReSolve's method ID.
+ *
+ * HiOp spells the two-synchronization variant "mgs_two_synch"; ReSolve
+ * spells it "mgs_two_sync". Unrecognized values fall back to plain MGS,
+ * matching the previous behavior of this adapter.
+ */
+std::string resolve_gram_schmidt_method(const std::string& hiop_scheme)
+{
+  if(hiop_scheme == "cgs2") {
+    return "cgs2";
+  }
+  if(hiop_scheme == "mgs_two_synch") {
+    return "mgs_two_sync";
+  }
+  if(hiop_scheme == "mgs_pm") {
+    return "mgs_pm";
+  }
+  return "mgs";
+}
+
 }  // namespace
 
 hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const int& nnz, hiopNlpFormulation* nlp)
@@ -203,26 +221,19 @@ hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const
       refactorization_setup_complete_(false),
       is_first_call_(true),
       use_ir_(false),
+      solve_on_device_(false),
+      refactorization_method_("klu"),
       matrix_(nullptr),
       rhs_(nullptr),
       solution_(nullptr),
-      factorization_solver_(nullptr),
+      cpu_workspace_(nullptr),
 #ifdef HIOP_USE_CUDA
       cuda_workspace_(nullptr),
-      cuda_glu_solver_(nullptr),
-      cuda_rf_solver_(nullptr),
 #endif
 #ifdef HIOP_USE_HIP
       hip_workspace_(nullptr),
-      hip_rf_solver_(nullptr),
 #endif
-
-      ir_matrix_handler_(nullptr),
-      ir_vector_handler_(nullptr),
-      ir_gram_schmidt_(nullptr),
-      ir_solver_(nullptr),
-      ir_preconditioner_(nullptr),
-      refactorization_mode_(RefactorizationMode::CPU_KLU)
+      solver_(nullptr)
 {
   const std::string mem_space = nlp_->options->GetString("mem_space");
 
@@ -245,6 +256,11 @@ hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const
     nlp_->log->printf(hovError, "ReSolve CPU execution does not support device-resident input.\n");
     std::abort();
   }
+
+  // In auto mode, device-resident input selects device execution.
+  // Explicit compute_mode values are not overridden.
+  solve_on_device_ = compute_mode == "hybrid" || compute_mode == "gpu" ||
+                     (compute_mode == "auto" && mem_space == "device");
 #endif
 
   const std::string ordering = nlp_->options->GetString("linear_solver_sparse_ordering");
@@ -260,52 +276,66 @@ hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const
                       ordering.c_str());
   }
 
+  // Select the ReSolve refactorization method and create the system solver
+  // on the matching workspace. SystemSolver owns KLU, the refactorization
+  // backend, and any iterative-refinement components.
+  if(solve_on_device_) {
 #ifdef HIOP_USE_GPU
-  const std::string refactorization = nlp_->options->GetString("resolve_refactorization");
-#endif
+    const std::string refactorization = nlp_->options->GetString("resolve_refactorization");
 
-  factorization_solver_ = new ReSolve::LinSolverDirectKLU();
-  factorization_solver_->setOrdering(ordering_method);
-  factorization_solver_->setHaltIfSingular(true);
-
-#ifdef HIOP_USE_GPU
-  // In auto mode, device-resident input selects device execution.
-  // Explicit compute_mode values are not overridden.
-  if(compute_mode == "hybrid" || compute_mode == "gpu" ||
-     (compute_mode == "auto" && mem_space == "device")) {
 #ifdef HIOP_USE_CUDA
+    refactorization_method_ = refactorization == "rf" ? "cusolverrf" : "glu";
+
     cuda_workspace_ = new ReSolve::LinAlgWorkspaceCUDA();
     cuda_workspace_->initializeHandles();
 
-    if(refactorization == "rf") {
-      refactorization_mode_ = RefactorizationMode::CUDA_RF;
-
-      cuda_rf_solver_ = new ReSolve::LinSolverDirectCuSolverRf(cuda_workspace_);
-    } else {
-      refactorization_mode_ = RefactorizationMode::CUDA_GLU;
-
-      cuda_glu_solver_ = new ReSolve::LinSolverDirectCuSolverGLU(cuda_workspace_);
-    }
+    solver_ = new ReSolve::SystemSolver(cuda_workspace_,
+                                        "klu",
+                                        refactorization_method_,
+                                        refactorization_method_,
+                                        "none",
+                                        "none");
 #elif defined(HIOP_USE_HIP)
     if(refactorization == "glu") {
       nlp_->log->printf(hovWarning, "GLU is unavailable with HIP; using rocSolverRf.\n");
     }
 
-    refactorization_mode_ = RefactorizationMode::HIP_RF;
+    refactorization_method_ = "rocsolverrf";
 
     hip_workspace_ = new ReSolve::LinAlgWorkspaceHIP();
     hip_workspace_->initializeHandles();
 
-    hip_rf_solver_ = new ReSolve::LinSolverDirectRocSolverRf(hip_workspace_);
+    solver_ = new ReSolve::SystemSolver(hip_workspace_,
+                                        "klu",
+                                        refactorization_method_,
+                                        refactorization_method_,
+                                        "none",
+                                        "none");
 #endif
+#endif
+  } else {
+    refactorization_method_ = "klu";
+
+    cpu_workspace_ = new ReSolve::LinAlgWorkspaceCpu();
+    cpu_workspace_->initializeHandles();
+
+    solver_ = new ReSolve::SystemSolver(cpu_workspace_, "klu", "klu", "klu", "none", "none");
   }
-#endif
+
+  assert(solver_ != nullptr);
+
+  // SystemSolver only exposes the KLU factorization solver through its
+  // LinSolverDirect base, so KLU-specific options go through the CLI
+  // parameter interface.
+  ReSolve::LinSolverDirect& klu = solver_->getFactorizationSolver();
+
+  klu.setCliParam("ordering", std::to_string(ordering_method));
+  klu.setCliParam("halt_if_singular", "yes");
 
   rhs_ = new ReSolve::vector::Vector(n_);
   solution_ = new ReSolve::vector::Vector(n_);
 
-  const auto vector_memory = refactorization_mode_ != RefactorizationMode::CPU_KLU ? ReSolve::memory::DEVICE
-                                                                                   : ReSolve::memory::HOST;
+  const auto vector_memory = solve_on_device_ ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
 
   const int rhs_status = rhs_->allocate(vector_memory);
 
@@ -316,125 +346,66 @@ hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const
     std::abort();
   }
 
-#ifdef HIOP_USE_GPU
-  const int ir_maxit = nlp_->options->GetInteger("ir_inner_maxit");
+  setup_iterative_refinement();
 
-  const int ir_restart = nlp_->options->GetInteger("ir_inner_restart");
-
-  const double ir_tol = nlp_->options->GetNumeric("ir_inner_tol");
-
-  const int ir_conv_cond = nlp_->options->GetInteger("ir_inner_conv_cond");
-
-  const std::string ir_gs_scheme = nlp_->options->GetString("ir_inner_gs_scheme");
-
-  // ReSolve's public iterative interface exposes each algorithm
-  // component. Assemble the handlers, Gram-Schmidt implementation, FGMRES
-  // solver, and LU preconditioner explicitly when refinement is requested.
-  if(refactorization_mode_ != RefactorizationMode::CPU_KLU && ir_maxit > 0) {
-#ifdef HIOP_USE_CUDA
-    if(refactorization_mode_ == RefactorizationMode::CUDA_RF) {
-      ir_matrix_handler_ = new ReSolve::MatrixHandler(cuda_workspace_);
-
-      ir_vector_handler_ = new ReSolve::VectorHandler(cuda_workspace_);
-
-      ir_preconditioner_ = new ReSolve::PreconditionerLU(cuda_rf_solver_);
-    } else if(refactorization_mode_ == RefactorizationMode::CUDA_GLU) {
-      nlp_->log->printf(hovWarning,
-                        "ReSolve iterative refinement is supported only with RF; "
-                        "disabling it for CUDA GLU.\n");
-    }
-#endif
-
-#ifdef HIOP_USE_HIP
-    if(refactorization_mode_ == RefactorizationMode::HIP_RF) {
-      ir_matrix_handler_ = new ReSolve::MatrixHandler(hip_workspace_);
-
-      ir_vector_handler_ = new ReSolve::VectorHandler(hip_workspace_);
-
-      ir_preconditioner_ = new ReSolve::PreconditionerLU(hip_rf_solver_);
-    }
-#endif
-
-    if(ir_preconditioner_ != nullptr) {
-      ReSolve::GramSchmidt::GSVariant gs_variant = ReSolve::GramSchmidt::MGS;
-
-      if(ir_gs_scheme == "cgs2") {
-        gs_variant = ReSolve::GramSchmidt::CGS2;
-      } else if(ir_gs_scheme == "mgs_two_synch") {
-        gs_variant = ReSolve::GramSchmidt::MGS_TWO_SYNC;
-      } else if(ir_gs_scheme == "mgs_pm") {
-        gs_variant = ReSolve::GramSchmidt::MGS_PM;
-      }
-
-      ir_gram_schmidt_ = new ReSolve::GramSchmidt(ir_vector_handler_, gs_variant);
-
-      ir_solver_ = new ReSolve::LinSolverIterativeFGMRES(ir_restart,
-                                                         ir_tol,
-                                                         ir_maxit,
-                                                         ir_conv_cond,
-                                                         ir_matrix_handler_,
-                                                         ir_vector_handler_,
-                                                         ir_gram_schmidt_);
-
-      const int ir_status = ir_solver_->setPreconditioner(ir_preconditioner_);
-
-      if(ir_status == 0) {
-        use_ir_ = true;
-      } else {
-        nlp_->log->printf(hovWarning,
-                          "ReSolve iterative refinement configuration failed; "
-                          "using the direct solution only.\n");
-      }
-    }
-  }
-#endif
   nlp_->log->printf(hovSummary, "Ordering: %d\n", ordering_method);
 
   nlp_->log->printf(hovSummary, "Factorization: klu\n");
 
-  switch(refactorization_mode_) {
-    case RefactorizationMode::CPU_KLU:
-      nlp_->log->printf(hovSummary, "Refactorization: klu\n");
-      break;
-
-#ifdef HIOP_USE_CUDA
-    case RefactorizationMode::CUDA_GLU:
-      nlp_->log->printf(hovSummary, "Refactorization: glu\n");
-      break;
-
-    case RefactorizationMode::CUDA_RF:
-      nlp_->log->printf(hovSummary, "Refactorization: rf\n");
-      break;
-#endif
-#ifdef HIOP_USE_HIP
-    case RefactorizationMode::HIP_RF:
-      nlp_->log->printf(hovSummary, "Refactorization: rocSolverRf\n");
-      break;
-#endif
-  }
+  nlp_->log->printf(hovSummary, "Refactorization: %s\n", refactorization_method_.c_str());
 
   nlp_->log->printf(hovSummary, "Use IR: %s\n", use_ir_ ? "yes" : "no");
 }
 
+void hiopLinSolverSymSparseReSolve::setup_iterative_refinement()
+{
+  assert(solver_ != nullptr);
+
+  const int ir_maxit = nlp_->options->GetInteger("ir_inner_maxit");
+
+  // ReSolve does not support iterative refinement on the host, and the
+  // adapter keeps GLU restricted to the direct solve as before.
+  if(!solve_on_device_ || ir_maxit <= 0) {
+    return;
+  }
+
+  if(refactorization_method_ == "glu") {
+    nlp_->log->printf(hovWarning,
+                      "ReSolve iterative refinement is supported only with RF; "
+                      "disabling it for CUDA GLU.\n");
+    return;
+  }
+
+  const std::string gs_method = resolve_gram_schmidt_method(nlp_->options->GetString("ir_inner_gs_scheme"));
+
+  solver_->setRefinementMethod("fgmres", gs_method);
+
+  if(solver_->getRefinementMethod() != "fgmres") {
+    nlp_->log->printf(hovWarning,
+                      "ReSolve iterative refinement configuration failed; "
+                      "using the direct solution only.\n");
+    return;
+  }
+
+  ReSolve::LinSolverIterative& fgmres = solver_->getIterativeSolver();
+
+  fgmres.setTol(nlp_->options->GetNumeric("ir_inner_tol"));
+  fgmres.setMaxit(ir_maxit);
+  fgmres.setCliParam("restart", std::to_string(nlp_->options->GetInteger("ir_inner_restart")));
+  fgmres.setCliParam("conv_cond", std::to_string(nlp_->options->GetInteger("ir_inner_conv_cond")));
+
+  use_ir_ = true;
+}
+
 hiopLinSolverSymSparseReSolve::~hiopLinSolverSymSparseReSolve()
 {
-  delete ir_solver_;
-  delete ir_preconditioner_;
-  delete ir_gram_schmidt_;
-  delete ir_vector_handler_;
-  delete ir_matrix_handler_;
-
-#ifdef HIOP_USE_CUDA
-  delete cuda_glu_solver_;
-  delete cuda_rf_solver_;
-#endif
-#ifdef HIOP_USE_HIP
-  delete hip_rf_solver_;
-#endif
-  delete factorization_solver_;
+  // The system solver references the workspace, so destroy it first.
+  delete solver_;
   delete rhs_;
   delete solution_;
   delete matrix_;
+
+  delete cpu_workspace_;
 #ifdef HIOP_USE_CUDA
   delete cuda_workspace_;
 #endif
@@ -473,7 +444,7 @@ int hiopLinSolverSymSparseReSolve::matrixChanged()
   assert(n_ == M_->n());
   assert(M_->n() == M_->m());
   assert(n_ > 0);
-  assert(factorization_solver_ != nullptr);
+  assert(solver_ != nullptr);
 
   nlp_->runStats.linsolv.tmFactTime.start();
 
@@ -494,11 +465,10 @@ int hiopLinSolverSymSparseReSolve::matrixChanged()
   // KLU is used directly on the host and supplies the initial factors
   // required to set up an accelerator backend. Once that one-time setup is
   // complete, later matrix changes require only numerical refactorization.
-  const bool needs_full_factorization =
-      refactorization_mode_ == RefactorizationMode::CPU_KLU || !refactorization_setup_complete_;
+  const bool needs_full_factorization = !solve_on_device_ || !refactorization_setup_complete_;
 
   if(factorizationSetupSucc_ == 0 && needs_full_factorization) {
-    status = factorization_solver_->factorize();
+    status = solver_->factorize();
 
     if(status != 0) {
       nlp_->log->printf(hovWarning, "ReSolve KLU factorization failed. Regularizing ...\n");
@@ -507,8 +477,10 @@ int hiopLinSolverSymSparseReSolve::matrixChanged()
       return -1;
     }
 
-    if(refactorization_mode_ != RefactorizationMode::CPU_KLU) {
-      status = setup_refactorization_solver();
+    if(solve_on_device_) {
+      // Extracts the KLU factors, sets up the accelerator backend, and, when
+      // enabled, attaches FGMRES refinement preconditioned by that backend.
+      status = solver_->refactorizationSetup();
 
       if(status != 0) {
         nlp_->log->printf(hovWarning, "ReSolve refactorization solver setup failed.\n");
@@ -519,47 +491,13 @@ int hiopLinSolverSymSparseReSolve::matrixChanged()
 
       refactorization_setup_complete_ = true;
 
-      if(use_ir_) {
-        assert(ir_solver_ != nullptr);
-
-        const int ir_status = ir_solver_->setup(matrix_);
-
-        if(ir_status != 0) {
-          nlp_->log->printf(hovWarning,
-                            "ReSolve iterative refinement setup failed; "
-                            "using the direct solver only.\n");
-
-          use_ir_ = false;
-        }
-      }
-
-      switch(refactorization_mode_) {
-        // CPU KLU is excluded by the enclosing condition. Keep this case so
-        // the enum switch remains exhaustive for warning-enabled builds.
-        case RefactorizationMode::CPU_KLU:
-          break;
-
-#ifdef HIOP_USE_CUDA
-        case RefactorizationMode::CUDA_GLU:
-          // ReSolve's LinSolverDirectCuSolverGLU::setup() performs the initial
-          // cusolverSpDgluReset() and cusolverSpDgluFactor(), so no separate
-          // refactorize() call is needed before the first solve
-          break;
-
-        case RefactorizationMode::CUDA_RF:
-          // RF setup imports and analyzes the KLU factors but does not perform
-          // the first numerical refactorization.
-          status = refactorize_selected_solver();
-          break;
-#endif
-
-#ifdef HIOP_USE_HIP
-        case RefactorizationMode::HIP_RF:
-          // RF setup imports and analyzes the KLU factors but does not perform
-          // the first numerical refactorization.
-          status = refactorize_selected_solver();
-          break;
-#endif
+      // GLU setup already performs the first numerical factorization. The RF
+      // backends only import and analyze the KLU factors, and SystemSolver
+      // routes the triangular solve through host KLU until refactorize() has
+      // run on the device. The vectors here are device-only, so the first
+      // device refactorization must happen before the first solve.
+      if(refactorization_method_ != "glu") {
+        status = solver_->refactorize();
       }
     }
 
@@ -576,7 +514,7 @@ int hiopLinSolverSymSparseReSolve::matrixChanged()
 
     nlp_->log->printf(hovScalars, "ReSolve factorization setup successful.\n");
   } else {
-    status = refactorize_selected_solver();
+    status = solver_->refactorize();
 
     if(status != 0) {
       nlp_->log->printf(hovWarning, "ReSolve refactorization failed. Regularizing ...\n");
@@ -585,20 +523,6 @@ int hiopLinSolverSymSparseReSolve::matrixChanged()
 
       nlp_->runStats.linsolv.tmFactTime.stop();
       return -1;
-    }
-
-    if(use_ir_) {
-      assert(ir_solver_ != nullptr);
-
-      const int ir_status = ir_solver_->resetMatrix(matrix_);
-
-      if(ir_status != 0) {
-        nlp_->log->printf(hovWarning,
-                          "ReSolve iterative refinement matrix reset failed; "
-                          "using the direct solver only.\n");
-
-        use_ir_ = false;
-      }
     }
 
     factorizationSetupSucc_ = 1;
@@ -615,6 +539,7 @@ bool hiopLinSolverSymSparseReSolve::solve(hiopVector& x)
   assert(M_->n() == M_->m());
   assert(n_ > 0);
   assert(x.get_size() == M_->n());
+  assert(solver_ != nullptr);
 
   if(factorizationSetupSucc_ == 0) {
     nlp_->log->printf(hovError, "ReSolve solve requested without a valid factorization.\n");
@@ -635,8 +560,7 @@ bool hiopLinSolverSymSparseReSolve::solve(hiopVector& x)
   // HiOp vector memory depends on mem_space; ReSolve vector memory depends on the selected backend.
   const auto external_memory = mem_space == "device" ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
 
-  const auto internal_memory = refactorization_mode_ != RefactorizationMode::CPU_KLU ? ReSolve::memory::DEVICE
-                                                                                     : ReSolve::memory::HOST;
+  const auto internal_memory = solve_on_device_ ? ReSolve::memory::DEVICE : ReSolve::memory::HOST;
 
   if(rhs_->copyFromExternal(x_data, external_memory, internal_memory) != 0) {
     nlp_->log->printf(hovError, "Failed to copy the right-hand side into ReSolve.\n");
@@ -645,7 +569,9 @@ bool hiopLinSolverSymSparseReSolve::solve(hiopVector& x)
     return false;
   }
 
-  if(solve_selected_solver() != 0) {
+  // SystemSolver runs the triangular solve and, when enabled, FGMRES
+  // refinement starting from the direct solution.
+  if(solver_->solve(rhs_, solution_) != 0) {
     nlp_->log->printf(hovError, "ReSolve solve failed.\n");
 
     nlp_->runStats.linsolv.tmTriuSolves.stop();
@@ -653,23 +579,13 @@ bool hiopLinSolverSymSparseReSolve::solve(hiopVector& x)
   }
 
   if(use_ir_) {
-    assert(ir_solver_ != nullptr);
-    assert(ir_preconditioner_ != nullptr);
-
-    const int ir_status = ir_solver_->solve(rhs_, solution_);
-
-    if(ir_status != 0) {
-      nlp_->log->printf(hovError, "ReSolve iterative refinement failed.\n");
-
-      nlp_->runStats.linsolv.tmTriuSolves.stop();
-      return false;
-    }
+    ReSolve::LinSolverIterative& fgmres = solver_->getIterativeSolver();
 
     nlp_->log->printf(hovScalars,
                       "ReSolve IR iterations: %d, "
                       "final relative residual: %e\n",
-                      static_cast<int>(ir_solver_->getNumIter()),
-                      ir_solver_->getFinalResidualNorm());
+                      static_cast<int>(fgmres.getNumIter()),
+                      fgmres.getFinalResidualNorm());
   }
 
   if(solution_->copyToExternal(x_data, internal_memory, external_memory) != 0) {
@@ -689,7 +605,7 @@ int hiopLinSolverSymSparseReSolve::firstCall()
   assert(n_ == M_->n());
   assert(M_->n() == M_->m());
   assert(n_ > 0);
-  assert(factorization_solver_ != nullptr);
+  assert(solver_ != nullptr);
 
 #ifdef HIOP_USE_GPU
   const std::string mem_space = nlp_->options->GetString("mem_space");
@@ -803,7 +719,7 @@ int hiopLinSolverSymSparseReSolve::firstCall()
   }
 
 #ifdef HIOP_USE_GPU
-  if(refactorization_mode_ != RefactorizationMode::CPU_KLU) {
+  if(solve_on_device_) {
     if(matrix_->allocateMatrixData(ReSolve::memory::DEVICE) != 0) {
       nlp_->log->printf(hovError, "Failed to allocate ReSolve matrix device storage.\n");
       return -1;
@@ -816,12 +732,14 @@ int hiopLinSolverSymSparseReSolve::firstCall()
   }
 #endif
 
-  if(factorization_solver_->setup(matrix_) != 0) {
-    nlp_->log->printf(hovError, "ReSolve KLU setup failed.\n");
+  // setMatrix() may be called again after a regularization retry rebuilds
+  // matrix_; SystemSolver replaces its internal references accordingly.
+  if(solver_->setMatrix(matrix_) != 0) {
+    nlp_->log->printf(hovError, "ReSolve system solver matrix setup failed.\n");
     return -1;
   }
 
-  if(factorization_solver_->analyze() != 0) {
+  if(solver_->analyze() != 0) {
     nlp_->log->printf(hovError, "ReSolve KLU symbolic analysis failed.\n");
     return -1;
   }
@@ -951,7 +869,7 @@ int hiopLinSolverSymSparseReSolve::update_matrix_values()
   }
 
 #ifdef HIOP_USE_GPU
-  if(refactorization_mode_ != RefactorizationMode::CPU_KLU) {
+  if(solve_on_device_) {
     // Accelerator refactorization consumes device values.
     if(matrix_->syncData(ReSolve::memory::DEVICE) != 0) {
       nlp_->log->printf(hovError, "Failed to synchronize ReSolve matrix values to the device.\n");
@@ -1238,107 +1156,6 @@ int hiopLinSolverSymSparseReSolve::set_csr_indices_values()
 
   delete[] nnz_each_row_tmp;
   return 0;
-}
-
-int hiopLinSolverSymSparseReSolve::setup_refactorization_solver()
-{
-  if(refactorization_mode_ == RefactorizationMode::CPU_KLU) {
-    return 0;
-  }
-
-#ifdef HIOP_USE_GPU
-  auto* L = dynamic_cast<ReSolve::matrix::Csr*>(factorization_solver_->getLFactor());
-
-  auto* U = dynamic_cast<ReSolve::matrix::Csr*>(factorization_solver_->getUFactor());
-
-  ReSolve::index_type* P = factorization_solver_->getPOrdering();
-
-  ReSolve::index_type* Q = factorization_solver_->getQOrdering();
-
-  if(L == nullptr || U == nullptr || P == nullptr || Q == nullptr) {
-    nlp_->log->printf(hovError, "Failed to extract KLU factors for ReSolve.\n");
-    return -1;
-  }
-#endif
-
-  switch(refactorization_mode_) {
-    // CPU KLU is handled above before factor extraction. Keep this case so
-    // the enum switch remains exhaustive for warning-enabled builds.
-    case RefactorizationMode::CPU_KLU:
-      return 0;
-
-#ifdef HIOP_USE_CUDA
-    case RefactorizationMode::CUDA_GLU:
-      assert(cuda_glu_solver_ != nullptr);
-
-      return cuda_glu_solver_->setup(matrix_, L, U, P, Q);
-
-    case RefactorizationMode::CUDA_RF:
-      assert(cuda_rf_solver_ != nullptr);
-
-      return cuda_rf_solver_->setup(matrix_, L, U, P, Q, rhs_);
-#endif
-#ifdef HIOP_USE_HIP
-    case RefactorizationMode::HIP_RF:
-      assert(hip_rf_solver_ != nullptr);
-
-      return hip_rf_solver_->setup(matrix_, L, U, P, Q, rhs_);
-#endif
-  }
-
-  return -1;
-}
-
-int hiopLinSolverSymSparseReSolve::refactorize_selected_solver()
-{
-  switch(refactorization_mode_) {
-    case RefactorizationMode::CPU_KLU:
-      assert(factorization_solver_ != nullptr);
-      return factorization_solver_->refactorize();
-
-#ifdef HIOP_USE_CUDA
-    case RefactorizationMode::CUDA_GLU:
-      assert(cuda_glu_solver_ != nullptr);
-      return cuda_glu_solver_->refactorize();
-
-    case RefactorizationMode::CUDA_RF:
-      assert(cuda_rf_solver_ != nullptr);
-      return cuda_rf_solver_->refactorize();
-#endif
-#ifdef HIOP_USE_HIP
-    case RefactorizationMode::HIP_RF:
-      assert(hip_rf_solver_ != nullptr);
-      return hip_rf_solver_->refactorize();
-#endif
-  }
-
-  return -1;
-}
-
-int hiopLinSolverSymSparseReSolve::solve_selected_solver()
-{
-  switch(refactorization_mode_) {
-    case RefactorizationMode::CPU_KLU:
-      assert(factorization_solver_ != nullptr);
-      return factorization_solver_->solve(rhs_, solution_);
-
-#ifdef HIOP_USE_CUDA
-    case RefactorizationMode::CUDA_GLU:
-      assert(cuda_glu_solver_ != nullptr);
-      return cuda_glu_solver_->solve(rhs_, solution_);
-
-    case RefactorizationMode::CUDA_RF:
-      assert(cuda_rf_solver_ != nullptr);
-      return cuda_rf_solver_->solve(rhs_, solution_);
-#endif
-#ifdef HIOP_USE_HIP
-    case RefactorizationMode::HIP_RF:
-      assert(hip_rf_solver_ != nullptr);
-      return hip_rf_solver_->solve(rhs_, solution_);
-#endif
-  }
-
-  return -1;
 }
 
 }  // namespace hiop

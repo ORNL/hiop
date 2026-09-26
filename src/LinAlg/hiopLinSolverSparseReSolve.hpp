@@ -61,25 +61,19 @@
 #include "hiopLinSolver.hpp"
 
 #include <cassert>
+#include <string>
 
 namespace ReSolve
 {
-class LinSolverDirectKLU;
+class SystemSolver;
 
-class MatrixHandler;
-class VectorHandler;
-class GramSchmidt;
-class LinSolverIterativeFGMRES;
-class PreconditionerLU;
+class LinAlgWorkspaceCpu;
 
 #ifdef HIOP_USE_CUDA
-class LinSolverDirectCuSolverGLU;
-class LinSolverDirectCuSolverRf;
 class LinAlgWorkspaceCUDA;
 #endif
 
 #ifdef HIOP_USE_HIP
-class LinSolverDirectRocSolverRf;
 class LinAlgWorkspaceHIP;
 #endif
 
@@ -100,11 +94,12 @@ namespace hiop
 class hiopMatrixSparse;
 
 /**
- * @brief Sparse symmetric linear solver adapter for ReSolve's public API.
+ * @brief Sparse symmetric linear solver adapter for ReSolve's SystemSolver.
  *
- * HiOp converts its symmetric triplet matrix to CSR and coordinates the
- * selected ReSolve factorization, refactorization, solve, and optional
- * iterative-refinement components.
+ * HiOp converts its symmetric triplet matrix to CSR and hands it to
+ * ReSolve::SystemSolver, which owns the KLU factorization, the optional
+ * accelerator refactorization backend, and optional FGMRES iterative
+ * refinement.
  *
  * @ingroup LinearSolvers
  */
@@ -141,26 +136,6 @@ public:
   }
 
 protected:
-  /**
-   * @brief Numerical backend used after the initial matrix setup.
-   *
-   * KLU is used directly for host execution and supplies the factors needed
-   * to initialize an accelerator refactorization backend.
-   */
-  enum class RefactorizationMode
-  {
-    CPU_KLU,
-
-  #ifdef HIOP_USE_CUDA
-    CUDA_GLU,
-    CUDA_RF,
-  #endif
-
-  #ifdef HIOP_USE_HIP
-    HIP_RF,
-  #endif
-  };
-
   /** Build the CSR matrix and perform one-time KLU setup and symbolic analysis. */
   int firstCall();
 
@@ -179,14 +154,8 @@ protected:
   /** Return the host-visible triplet matrix used to construct CSR. */
   hiopMatrixSparse* host_matrix() const;
 
-  /** Initialize the selected accelerator backend from the KLU factors. */
-  int setup_refactorization_solver();
-
-  /** Run numerical refactorization with the selected backend. */
-  int refactorize_selected_solver();
-
-  /** Solve the current system with the selected backend. */
-  int solve_selected_solver();
+  /** Configure FGMRES iterative refinement on the system solver. */
+  void setup_iterative_refinement();
 
   hiopMatrixSparse* M_host_;
 
@@ -208,29 +177,25 @@ protected:
   bool is_first_call_;
   bool use_ir_;
 
+  /// True when refactorization and triangular solves run on the device.
+  bool solve_on_device_;
+
+  /// ReSolve refactorization method ID: "klu", "glu", "cusolverrf", or "rocsolverrf".
+  std::string refactorization_method_;
+
   ReSolve::matrix::Csr* matrix_;
   ReSolve::vector::Vector* rhs_;
   ReSolve::vector::Vector* solution_;
 
-  ReSolve::LinSolverDirectKLU* factorization_solver_;
-
+  ReSolve::LinAlgWorkspaceCpu* cpu_workspace_;
 #ifdef HIOP_USE_CUDA
   ReSolve::LinAlgWorkspaceCUDA* cuda_workspace_;
-  ReSolve::LinSolverDirectCuSolverGLU* cuda_glu_solver_;
-  ReSolve::LinSolverDirectCuSolverRf* cuda_rf_solver_;
 #endif
-
 #ifdef HIOP_USE_HIP
   ReSolve::LinAlgWorkspaceHIP* hip_workspace_;
-  ReSolve::LinSolverDirectRocSolverRf* hip_rf_solver_;
 #endif
-  ReSolve::MatrixHandler* ir_matrix_handler_;
-  ReSolve::VectorHandler* ir_vector_handler_;
-  ReSolve::GramSchmidt* ir_gram_schmidt_;
-  ReSolve::LinSolverIterativeFGMRES* ir_solver_;
-  ReSolve::PreconditionerLU* ir_preconditioner_;
 
-  RefactorizationMode refactorization_mode_;
+  ReSolve::SystemSolver* solver_;
 };
 
 }  // namespace hiop
