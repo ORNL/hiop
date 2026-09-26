@@ -264,7 +264,7 @@ hiopLinSolverSymSparseReSolve::hiopLinSolverSymSparseReSolve(const int& n, const
   // backend, and any iterative-refinement components.
   if(solve_on_device_) {
 #ifdef HIOP_USE_GPU
-    const std::string refactorization = nlp_->options->GetString("resolve_refactorization");
+    std::string refactorization = nlp_->options->GetString("resolve_refactorization");
 
 #ifdef HIOP_USE_CUDA
     if (refactorization == "rf")
