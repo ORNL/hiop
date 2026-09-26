@@ -1001,12 +1001,13 @@ void hiopOptionsNLP::register_options()
 
   // ReSolve refactorization options
   {
-    vector<std::string> range = {"glu", "rf"};
+    vector<std::string> range = {"klu","glu", "rf"};
     auto default_value = range[0];
     register_str_option("resolve_refactorization",
                         default_value,
                         range,
                         "Numerical refactorization function after sparsity pattern of factors is computed. "
+                        "'klu' is calling refactorization on CPU by KLU solver; "
                         "'glu' is experimental, selects CUDA GLU refactorization, and falls back to RF on HIP; "
                         "'rf' selects the available CUDA or HIP RF implementation. ");
   }
