@@ -1022,7 +1022,7 @@ void hiopOptionsNLP::register_options()
   register_int_option("ir_inner_maxit", 50, 0, 1000, "(F)GMRES maximum number of iterations (default is 50). ");
 
   {
-    vector<std::string> range = {"mgs", "cgs2", "mgs_two_synch", "mgs_pm"};
+    vector<std::string> range = {"mgs", "cgs2", "mgs_two_sync", "mgs_pm"};
     auto default_value = range[0];
     register_str_option("ir_inner_gs_scheme",
                         default_value,
@@ -1030,7 +1030,7 @@ void hiopOptionsNLP::register_options()
                         "Gram-Schmidt orthogonalization version for FMGRES. "
                         "mgs: modified Gram-Schmidt (textbook, default). "
                         "cgs2: reorthogonalized classical Gram-Schmidt (three synchs). "
-                        "mgs_two_synch: two synch (stable) MGS. "
+                        "mgs_two_sync: two synch (stable) MGS. "
                         "mgs_pm: post-modern MGS, two synchs. ");
   }
 
