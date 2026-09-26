@@ -106,6 +106,9 @@ namespace
  *
  * Runtime failures are reported through HiOp's logger and propagated to the
  * caller rather than being hidden behind debug-only assertions.
+ * 
+ * @warning We assume that eithr CUDA or HIP backend are enabled but not both.
+ * So far, this has been a safe assumtion.
  */
 #ifdef HIOP_USE_CUDA
 bool copy_device_to_host(hiopNlpFormulation* nlp, void* destination, const void* source, size_t bytes, const char* operation)
@@ -185,26 +188,6 @@ __global__ void addToArrayKernel(T* dst, const T* src, const I* mapidx, I n, I n
 
 #endif
 
-/**
- * @brief Map HiOp's Gram-Schmidt option value to ReSolve's method ID.
- *
- * HiOp spells the two-synchronization variant "mgs_two_synch"; ReSolve
- * spells it "mgs_two_sync". Unrecognized values fall back to plain MGS,
- * matching the previous behavior of this adapter.
- */
-std::string resolve_gram_schmidt_method(const std::string& hiop_scheme)
-{
-  if(hiop_scheme == "cgs2") {
-    return "cgs2";
-  }
-  if(hiop_scheme == "mgs_two_synch") {
-    return "mgs_two_sync";
-  }
-  if(hiop_scheme == "mgs_pm") {
-    return "mgs_pm";
-  }
-  return "mgs";
-}
 
 }  // namespace
 
@@ -376,7 +359,7 @@ void hiopLinSolverSymSparseReSolve::setup_iterative_refinement()
     return;
   }
 
-  const std::string gs_method = resolve_gram_schmidt_method(nlp_->options->GetString("ir_inner_gs_scheme"));
+  const std::string gs_method = nlp_->options->GetString("ir_inner_gs_scheme");
 
   solver_->setRefinementMethod("fgmres", gs_method);
 

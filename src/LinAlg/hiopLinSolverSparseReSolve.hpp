@@ -49,9 +49,9 @@
 /**
  * @file hiopLinSolverSparseReSolve.hpp
  *
- * @author Tamar DeWilde <dewildetc@ornl.gov>
  * @author Kasia Swirydowicz <kasia.Swirydowicz@pnnl.gov>, PNNL
  * @author Slaven Peles <peless@ornl.gov>, ORNL
+ * @author Tamar DeWilde <dewildetc@ornl.gov>
  *
  */
 
