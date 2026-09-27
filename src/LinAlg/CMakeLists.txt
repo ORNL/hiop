@@ -12,6 +12,7 @@ set(hiopLinAlg_INTERFACE_HEADERS
   hiopLinSolverSparseSTRUMPACK.hpp
   hiopLinSolverSparsePARDISO.hpp
   hiopLinSolverSparseReSolve.hpp
+  hiopLinSolverSparseHyKKT.hpp
   hiopLinSolverUMFPACKZ.hpp
   hiopLinSolverCholCuSparse.hpp
   hiopMatrix.hpp
@@ -99,6 +100,7 @@ set(hiopLinAlg_PARDISO_SRC
 
 set(hiopLinAlg_RESOLVE_SRC
   hiopLinSolverSparseReSolve.cpp
+  hiopLinSolverSparseHyKKT.cpp
 )
 
 set(hiopLinAlg_CUSOLVER_CHOL_SRC
