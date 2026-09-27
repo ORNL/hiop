@@ -3549,7 +3549,14 @@ bool hiopAlgFilterIPMBase::compute_search_direction_inertia_free(hiopKKTLinSys* 
                          max_refactorization);
         return false;
       }
-      kkt->factorize_inertia_free();
+      // build_kkt_matrix() failures (for example, a solver that cannot apply the
+      // requested regularization) are unrecoverable and must not fall through
+      // to a solve with an inconsistent linear system.
+      if(!kkt->factorize_inertia_free()) {
+        nlp->log->write("Unrecoverable error in step computation (refactorization)(inertia free)[3]. Will exit here.",
+                        hovError);
+        return false;
+      }
       num_refact++;
       nlp->runStats.kkt.nUpdateICCorr++;
     }
