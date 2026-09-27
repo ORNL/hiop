@@ -184,6 +184,27 @@ private:
 };
 
 /*
+ * Solves KKTLinSysCompressedXDYcYd using ReSolve's HyKKT solver.
+ *
+ * HyKKT operates directly on the KKT matrix blocks instead of assembling
+ * the full sparse KKT matrix. This class only assembles the regularized
+ * diagonals Hx and Hd and hands the blocks to hiopLinSolverSparseHyKKT,
+ * which owns all ReSolve objects. The right-hand side assembly and the
+ * solve are inherited from hiopKKTLinSysCompressedSparseXDYcYd.
+ */
+class hiopKKTLinSysCompressedSparseXDYcYdHyKKT : public hiopKKTLinSysCompressedSparseXDYcYd
+{
+public:
+  hiopKKTLinSysCompressedSparseXDYcYdHyKKT(hiopNlpFormulation* nlp);
+  virtual ~hiopKKTLinSysCompressedSparseXDYcYdHyKKT();
+
+  virtual bool build_kkt_matrix(const hiopPDPerturbation& pdreg);
+
+protected:
+  virtual int factorizeWithCurvCheck();
+};
+
+/*
  * Solves KKTLinSysCompressedXYcYd by exploiting the sparse structure
  *
  * In general, the so-called XYcYd system has the form

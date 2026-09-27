@@ -12,6 +12,7 @@ set(hiopLinAlg_INTERFACE_HEADERS
   hiopLinSolverSparseSTRUMPACK.hpp
   hiopLinSolverSparsePARDISO.hpp
   hiopLinSolverSparseReSolve.hpp
+  hiopLinSolverSparseHyKKT.hpp
   hiopLinSolverUMFPACKZ.hpp
   hiopLinSolverCholCuSparse.hpp
   hiopMatrix.hpp
@@ -99,6 +100,7 @@ set(hiopLinAlg_PARDISO_SRC
 
 set(hiopLinAlg_RESOLVE_SRC
   hiopLinSolverSparseReSolve.cpp
+  hiopLinSolverSparseHyKKT.cpp
 )
 
 set(hiopLinAlg_CUSOLVER_CHOL_SRC
@@ -149,9 +151,7 @@ if(HIOP_SPARSE)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_PARDISO_SRC})
     endif(HIOP_USE_PARDISO)
     if(HIOP_USE_RESOLVE)
-      find_package(ReSolve CONFIG REQUIRED HINTS ${ReSolve_DIR} ${ReSolve_DIR}/share/resolve/cmake)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_RESOLVE_SRC})
-      target_link_libraries(hiop_tpl INTERFACE ReSolve::ReSolve)
     endif()
     if(HIOP_USE_CUDA)
       list(APPEND hiopLinAlg_SRC ${hiopLinAlg_CUSOLVER_CHOL_SRC})
