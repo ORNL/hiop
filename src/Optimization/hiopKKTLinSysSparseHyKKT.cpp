@@ -50,11 +50,12 @@
  * @file hiopKKTLinSysSparseHyKKT.cpp
  *
  * @author Tamar DeWilde <dewildetc@ornl.gov>
+ * @author Slaven Peles <peless@ornl.gov>
  *
  * @brief XDYcYd KKT system solved with ReSolve's HyKKT.
  */
 
-#include "hiopKKTLinSysSparse.hpp"
+#include "hiopKKTLinSysSparseHyKKT.hpp"
 
 #include "hiopLinSolverSparseHyKKT.hpp"
 

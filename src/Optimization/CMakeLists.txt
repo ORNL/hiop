@@ -44,6 +44,7 @@ set(hiopOptimization_INTERFACE_HEADERS
   hiopKKTLinSysSparse.hpp
   hiopKKTLinSysSparseCondensed.hpp
   hiopKKTLinSysSparseNormalEqn.hpp
+  hiopKKTLinSysSparseHyKKT.hpp
   hiopLogBarProblem.hpp
   hiopNlpFormulation.hpp
   hiopNlpTransforms.hpp

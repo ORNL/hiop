@@ -62,6 +62,7 @@
 #include "hiopKKTLinSysSparse.hpp"
 #include "hiopKKTLinSysSparseCondensed.hpp"
 #include "hiopKKTLinSysSparseNormalEqn.hpp"
+#include "hiopKKTLinSysSparseHyKKT.hpp"
 
 #include "hiopFRProb.hpp"
 
